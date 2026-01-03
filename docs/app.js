@@ -179,13 +179,18 @@ async function loadSqlJs() {
 
 async function downloadAndOpenDb(sqlJs) {
   const url = latestMeta.sqlite_gz_url;
-  setStatus(`Laster database (${latestMeta.snapshot_date})…`);
+
+  // ✅ Oppdatert status-tekst (mer profesjonell)
+  setStatus(`Laster datagrunnlag (snapshot ${latestMeta.snapshot_date}) …`);
+
   const r = await fetch(url, { cache: "no-store" });
   if (!r.ok) throw new Error(`Klarte ikke å laste DB (HTTP ${r.status})`);
   const gzBuf = new Uint8Array(await r.arrayBuffer());
   const rawBuf = window.pako.ungzip(gzBuf);
   db = new sqlJs.Database(rawBuf);
-  setStatus(`Klar. Snapshot: ${latestMeta.snapshot_date}`);
+
+  // ✅ Oppdatert status-tekst (mer profesjonell)
+  setStatus(`Datagrunnlag: Snapshot ${latestMeta.snapshot_date}`);
 }
 
 function runQuery(sql, params = {}) {
