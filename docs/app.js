@@ -67,6 +67,49 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
+// -------------------- Formatting helpers --------------------
+function formatPermitIdForDisplay(permitId) {
+  // "F A 0011" -> "F-A-0011"
+  return String(permitId).trim().replace(/\s+/g, "-");
+}
+
+function normalizePermitIdForLookup(input) {
+  // Tillat søk både med bindestrek og mellomrom -> DB-format med mellomrom
+  if (!input) return "";
+  return String(input)
+    .trim()
+    .replace(/\s*-\s*/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function normalizeDetailsObjectForDisplay(obj) {
+  if (!obj || typeof obj !== "object") return obj;
+  const out = { ...obj };
+  if (out["TILL_NR"] != null && String(out["TILL_NR"]).trim() !== "") {
+    out["TILL_NR"] = formatPermitIdForDisplay(out["TILL_NR"]);
+  }
+  return out;
+}
+
+function tryExtract(obj, key) {
+  const v = obj ? obj[key] : null;
+  return v == null ? "" : String(v).trim();
+}
+
+// -------------------- Permit external link helpers --------------------
+function permitUrl(permitIdOrDisplay) {
+  const display = formatPermitIdForDisplay(permitIdOrDisplay); // ensure F-A-0011
+  return `https://sikker.fiskeridir.no/akvakulturregisteret/web/licenses/${encodeURIComponent(display)}`;
+}
+
+function permitLinkHtml(permitIdOrDisplay, label = null) {
+  const display = formatPermitIdForDisplay(permitIdOrDisplay);
+  const text = label || display;
+  const href = permitUrl(display);
+  return `<a href="${href}" target="_blank" rel="noopener noreferrer">${escapeHtml(text)}</a>`;
+}
+
+// -------------------- Rendering --------------------
 function renderTable(containerId, columns, rows, opts = {}) {
   const { wrapDetailsArea = false, zebra = false } = opts;
   const el = document.getElementById(containerId);
@@ -86,7 +129,14 @@ function renderTable(containerId, columns, rows, opts = {}) {
 
   for (const r of rows) {
     html += `<tr>`;
-    for (const cell of r) html += `<td>${cell === null ? "" : escapeHtml(String(cell))}</td>`;
+    for (const cell of r) {
+      // Støtt "rå HTML" celler: { __html: "<a>...</a>" }
+      if (cell && typeof cell === "object" && cell.__html) {
+        html += `<td>${cell.__html}</td>`;
+      } else {
+        html += `<td>${cell === null ? "" : escapeHtml(String(cell))}</td>`;
+      }
+    }
     html += `</tr>`;
   }
 
@@ -115,33 +165,59 @@ function renderKeyValue(containerId, obj, title = null) {
   el.innerHTML = html;
 }
 
-// -------------------- Formatting helpers --------------------
-function formatPermitIdForDisplay(permitId) {
-  // "F A 0011" -> "F-A-0011"
-  return String(permitId).trim().replace(/\s+/g, "-");
-}
+// Key/Value “Vis detaljer”-tabell med lenking av TILL_NR
+function renderKeyValueTableHtml(obj, title = null) {
+  const keys = Object.keys(obj || {});
+  if (!obj || keys.length === 0) return "<p>Ingen data.</p>";
 
-function normalizePermitIdForLookup(input) {
-  // Tillat søk både med bindestrek og mellomrom -> DB-format med mellomrom
-  if (!input) return "";
-  return String(input)
-    .trim()
-    .replace(/\s*-\s*/g, " ")
-    .replace(/\s+/g, " ");
-}
+  const o = normalizeDetailsObjectForDisplay(obj);
 
-function normalizeDetailsObjectForDisplay(obj) {
-  if (!obj || typeof obj !== "object") return obj;
-  const out = { ...obj };
-  if (out["TILL_NR"] != null && String(out["TILL_NR"]).trim() !== "") {
-    out["TILL_NR"] = formatPermitIdForDisplay(out["TILL_NR"]);
+  let html = "";
+  if (title) html += `<h4>${escapeHtml(title)}</h4>`;
+  html += `<div class="details-area">`;
+  html += `<table class="details-kv zebra"><thead><tr><th>Felt</th><th>Verdi</th></tr></thead><tbody>`;
+
+  for (const key of Object.keys(o).sort()) {
+    const val = o[key];
+
+    let cellHtml = (val == null) ? "" : escapeHtml(String(val));
+
+    // Klikkbar TILL_NR
+    if (key === "TILL_NR" && val != null && String(val).trim() !== "") {
+      cellHtml = permitLinkHtml(val, formatPermitIdForDisplay(val));
+    }
+
+    html += `<tr><td><code>${escapeHtml(key)}</code></td><td>${cellHtml}</td></tr>`;
   }
-  return out;
+
+  html += "</tbody></table>";
+  html += `</div>`;
+  return html;
 }
 
-function tryExtract(obj, key) {
-  const v = obj ? obj[key] : null;
-  return v == null ? "" : String(v).trim();
+function renderVerticalCards(containerId, cardsHtml) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (!cardsHtml || cardsHtml.length === 0) {
+    el.innerHTML = "<p>Ingen treff.</p>";
+    return;
+  }
+  el.innerHTML = cardsHtml.join("\n<hr />\n");
+}
+
+function cardFromSummary(summaryObj, permitIdForData, holderId, preferDate, detailsTargetId, heading) {
+  const detailsBtn = `
+    <button class="details-btn"
+      data-target="${escapeHtml(detailsTargetId)}"
+      data-permit="${escapeHtml(permitIdForData)}"
+      data-holder="${escapeHtml(holderId || "")}"
+      data-date="${escapeHtml(preferDate || "")}">
+      Vis detaljer
+    </button>
+  `;
+  const title = heading ? `<h4>${escapeHtml(heading)}</h4>` : "";
+  const kv = renderKeyValueTableHtml(summaryObj);
+  return `${title}<div class="row">${detailsBtn}</div>${kv}`;
 }
 
 // -------------------- Clear helpers --------------------
@@ -332,7 +408,6 @@ function applyUrlParamsIfAny() {
   if (finalView === "permit-now") document.getElementById("permitNowInput").value = id;
   if (finalView === "permit-history") document.getElementById("permitHistInput").value = id;
 
-  // Autokjør søk
   if (finalView === "holder-now") document.getElementById("holderNowBtn").click();
   if (finalView === "holder-history") document.getElementById("holderHistBtn").click();
   if (finalView === "permit-now") document.getElementById("permitNowBtn").click();
@@ -441,9 +516,11 @@ function getPermitStatusForHolder(holderId, permitId) {
 
 // -------------------- Holder details table (horisontal + zebra) --------------------
 function renderHolderDetailsTable(containerId, holderId, permitIds) {
+  const el = document.getElementById(containerId);
+  if (!el) return { columns: [], rows: [] };
+
   if (!permitIds || permitIds.length === 0) {
-    const el = document.getElementById(containerId);
-    if (el) el.innerHTML = "<p>Ingen tillatelser å vise.</p>";
+    el.innerHTML = "<p>Ingen tillatelser å vise.</p>";
     return { columns: [], rows: [] };
   }
 
@@ -461,10 +538,18 @@ function renderHolderDetailsTable(containerId, holderId, permitIds) {
   const rows = [];
   for (const permitId of permitIds) {
     const rowJson = getLatestSnapshotRowJsonForPermitHolder(permitId, holderId);
-    const displayPermit = formatPermitIdForDisplay(permitId);
 
     if (!rowJson) {
-      rows.push([getPermitStatusForHolder(holderId, permitId), displayPermit, "", "", "", "", "", ""]);
+      rows.push([
+        getPermitStatusForHolder(holderId, permitId),
+        { __html: permitLinkHtml(permitId) },
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ]);
       continue;
     }
 
@@ -475,7 +560,7 @@ function renderHolderDetailsTable(containerId, holderId, permitIds) {
 
     rows.push([
       getPermitStatusForHolder(holderId, permitId),
-      displayPermit,
+      { __html: permitLinkHtml(permitId) }, // 👈 klikkbar lenke
       tryExtract(obj, "ART"),
       tryExtract(obj, "FORMÅL"),
       tryExtract(obj, "PRODUKSJONSFORM"),
@@ -489,56 +574,14 @@ function renderHolderDetailsTable(containerId, holderId, permitIds) {
     const ra = String(a[0]).startsWith("Aktiv") ? 0 : 1;
     const rb = String(b[0]).startsWith("Aktiv") ? 0 : 1;
     if (ra !== rb) return ra - rb;
-    return String(a[1]).localeCompare(String(b[1]), "no");
+    // sammenlign på tekst (tillatelsesnummer)
+    const aTxt = (a[1] && typeof a[1] === "object" && a[1].__html) ? a[1].__html : String(a[1]);
+    const bTxt = (b[1] && typeof b[1] === "object" && b[1].__html) ? b[1].__html : String(b[1]);
+    return aTxt.localeCompare(bTxt, "no");
   });
 
   renderTable(containerId, columns, rows, { wrapDetailsArea: true, zebra: true });
   return { columns, rows };
-}
-
-// -------------------- Permit views (kort + detalj) --------------------
-function renderKeyValueTableHtml(obj, title = null) {
-  const keys = Object.keys(obj || {});
-  if (!obj || keys.length === 0) return "<p>Ingen data.</p>";
-
-  const o = normalizeDetailsObjectForDisplay(obj);
-
-  let html = "";
-  if (title) html += `<h4>${escapeHtml(title)}</h4>`;
-  html += `<div class="details-area">`;
-  html += `<table class="details-kv zebra"><thead><tr><th>Felt</th><th>Verdi</th></tr></thead><tbody>`;
-  for (const key of Object.keys(o).sort()) {
-    const val = o[key];
-    html += `<tr><td><code>${escapeHtml(key)}</code></td><td>${val == null ? "" : escapeHtml(String(val))}</td></tr>`;
-  }
-  html += "</tbody></table>";
-  html += `</div>`;
-  return html;
-}
-
-function renderVerticalCards(containerId, cardsHtml) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
-  if (!cardsHtml || cardsHtml.length === 0) {
-    el.innerHTML = "<p>Ingen treff.</p>";
-    return;
-  }
-  el.innerHTML = cardsHtml.join("\n<hr />\n");
-}
-
-function cardFromSummary(summaryObj, permitIdForData, holderId, preferDate, detailsTargetId, heading) {
-  const detailsBtn = `
-    <button class="details-btn"
-      data-target="${escapeHtml(detailsTargetId)}"
-      data-permit="${escapeHtml(permitIdForData)}"
-      data-holder="${escapeHtml(holderId || "")}"
-      data-date="${escapeHtml(preferDate || "")}">
-      Vis detaljer
-    </button>
-  `;
-  const title = heading ? `<h4>${escapeHtml(heading)}</h4>` : "";
-  const kv = renderKeyValueTableHtml(summaryObj);
-  return `${title}<div class="row">${detailsBtn}</div>${kv}`;
 }
 
 // -------------------- SØK: Innehaver – gjeldende --------------------
@@ -546,7 +589,6 @@ document.getElementById("holderNowBtn").addEventListener("click", () => {
   const holderId = (document.getElementById("holderNowInput").value || "").trim();
   if (!holderId) { clearHolderNowUI(); updateUrlFromUi(); return; }
 
-  // alle aktive (uavhengig av filter) -> for "totalt"
   const qAll = `
     SELECT DISTINCT permit_id
     FROM ownership_intervals
@@ -556,7 +598,6 @@ document.getElementById("holderNowBtn").addEventListener("click", () => {
   const allRows = runQuery(qAll, { $h: holderId });
   const allPermitIds = allRows.map(r => r[0]);
 
-  // view-liste (respekterer aktivt filter)
   const fc = filterConditionSql("permit_id");
   const qView = `
     SELECT DISTINCT permit_id
@@ -580,7 +621,6 @@ document.getElementById("holderNowBtn").addEventListener("click", () => {
     return;
   }
 
-  // NAVN (hent fra snapshot)
   let navn = "";
   const anyRowJson = getLatestSnapshotRowJsonForHolder(holderId);
   if (anyRowJson) navn = tryExtract(JSON.parse(anyRowJson), "NAVN");
@@ -613,8 +653,16 @@ document.getElementById("holderNowDetailsBtn").addEventListener("click", () => {
   if (!holderId) { clearHolderNowUI(); updateUrlFromUi(); return; }
 
   const { columns, rows } = renderHolderDetailsTable("holderNowDetails", holderId, holderNowPermitIds);
+
+  // For CSV vil vi ha “tekst” i TILL_NR-kolonnen:
+  const csvRows = rows.map(r => {
+    const out = [...r];
+    out[1] = (out[1] && typeof out[1] === "object" && out[1].__html) ? formatPermitIdForDisplay(holderNowPermitIds[0] || "") : out[1];
+    return out;
+  });
+
   exportState.holderNow.columns = columns;
-  exportState.holderNow.rows = rows;
+  exportState.holderNow.rows = rows.map(r => r.map(cell => (cell && typeof cell === "object" && cell.__html) ? "" : cell));
   document.getElementById("holderNowExportBtn").disabled = rows.length === 0;
 
   updateUrlFromUi();
@@ -690,7 +738,7 @@ document.getElementById("holderHistDetailsBtn").addEventListener("click", () => 
 
   const { columns, rows } = renderHolderDetailsTable("holderHistDetails", holderId, holderHistPermitIds);
   exportState.holderHist.columns = columns;
-  exportState.holderHist.rows = rows;
+  exportState.holderHist.rows = rows.map(r => r.map(cell => (cell && typeof cell === "object" && cell.__html) ? "" : cell));
   document.getElementById("holderHistExportBtn").disabled = rows.length === 0;
 
   updateUrlFromUi();
@@ -701,7 +749,7 @@ document.getElementById("permitNowBtn").addEventListener("click", () => {
   const raw = (document.getElementById("permitNowInput").value || "").trim();
   if (!raw) { clearPermitNowUI(); updateUrlFromUi(); return; }
 
-  const permitId = normalizePermitIdForLookup(raw); // DB-format
+  const permitId = normalizePermitIdForLookup(raw);
   const permitDisplay = formatPermitIdForDisplay(permitId);
 
   if (activeFilter && !permitIsInActiveFilter(permitId)) {
