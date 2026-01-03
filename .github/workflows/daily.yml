@@ -29,6 +29,7 @@ jobs:
       - name: Fetch dump
         id: fetch
         run: |
+          mkdir -p work
           python ingest/fetch_dump.py work > work/fetch_out.txt
           echo "---- fetch_out ----"
           cat work/fetch_out.txt
