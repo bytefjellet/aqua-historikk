@@ -1,0 +1,4 @@
+# config/filter.yml
+# Start: ingen filtrering (alt inkluderes).
+# Når du vet kolonnenavn for type/kategori, kan du legge til regler.
+rules: []
