@@ -37,8 +37,8 @@ th {
   color: #ffffff;
 }
 
-/* Zebra-striper */
-tbody tr:nth-child(even) {
+/* Zebra kun på detalj-tabeller (key/value) */
+.details-kv tbody tr:nth-child(even) {
   background: #eff3f9;
 }
 
@@ -47,7 +47,6 @@ tbody tr:nth-child(even) {
   margin-top: 22px;
 }
 
-/* Litt mer luft også over tabellene generelt */
 .result table { margin-top: 12px; }
 
 h3 { margin-top: 18px; }
