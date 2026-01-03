@@ -82,15 +82,10 @@ function renderKeyValue(containerId, obj, title = null) {
 
 // -------------------- Formatting helpers --------------------
 function formatPermitIdForDisplay(permitId) {
-  // "F A 0011" -> "F-A-0011"
   return String(permitId).trim().replace(/\s+/g, "-");
 }
 
 function normalizePermitIdForLookup(input) {
-  // Tillat søk både med bindestrek og mellomrom:
-  // "F-A-0011" -> "F A 0011"
-  // "F   A   0011" -> "F A 0011"
-  // "F - A - 0011" -> "F A 0011"
   if (!input) return "";
   return String(input)
     .trim()
@@ -98,7 +93,6 @@ function normalizePermitIdForLookup(input) {
     .replace(/\s+/g, " ");
 }
 
-// Brukes for å justere objektet som vises i "Detaljer" slik at TILL_NR blir med bindestrek
 function normalizeDetailsObjectForDisplay(obj) {
   if (!obj || typeof obj !== "object") return obj;
   const out = { ...obj };
@@ -314,10 +308,7 @@ function renderHolderDetailsTable(containerId, holderId, permitIds) {
     const displayPermit = formatPermitIdForDisplay(permitId);
 
     if (!rowJson) {
-      rows.push([
-        getPermitStatusForHolder(holderId, permitId),
-        displayPermit, "", "", "", "", "", ""
-      ]);
+      rows.push([getPermitStatusForHolder(holderId, permitId), displayPermit, "", "", "", "", "", ""]);
       continue;
     }
 
@@ -468,17 +459,17 @@ document.getElementById("holderHistDetailsBtn").addEventListener("click", () => 
   renderHolderDetailsTable("holderHistDetails", holderId, holderHistPermitIds);
 });
 
-// -------------------- Permit views (med bindestrek-visning i kort + overskrift + detaljer-tabell) --------------------
+// -------------------- Permit views --------------------
 function renderKeyValueTableHtml(obj, title = null) {
   const keys = Object.keys(obj || {});
   if (!obj || keys.length === 0) return "<p>Ingen data.</p>";
 
-  // Sørg for at "TILL_NR" i detalj-tabellen vises med bindestrek
   const o = normalizeDetailsObjectForDisplay(obj);
 
   let html = "";
   if (title) html += `<h4>${escapeHtml(title)}</h4>`;
-  html += "<table><thead><tr><th>Felt</th><th>Verdi</th></tr></thead><tbody>";
+  // NB: class="details-kv" slik at CSS kan gi zebra kun her
+  html += `<table class="details-kv"><thead><tr><th>Felt</th><th>Verdi</th></tr></thead><tbody>`;
   for (const key of Object.keys(o).sort()) {
     const val = o[key];
     html += `<tr><td><code>${escapeHtml(key)}</code></td><td>${val == null ? "" : escapeHtml(String(val))}</td></tr>`;
@@ -622,7 +613,6 @@ document.addEventListener("click", (e) => {
 
   const permitDisplay = formatPermitIdForDisplay(permitId);
   const detailsObj = normalizeDetailsObjectForDisplay(JSON.parse(rowJson));
-
   document.getElementById(targetId).innerHTML =
     renderKeyValueTableHtml(detailsObj, `Detaljer for ${permitDisplay}`);
 });
