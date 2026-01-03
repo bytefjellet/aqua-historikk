@@ -51,7 +51,8 @@ function renderTable(containerId, columns, rows) {
     return;
   }
   let html = "<table><thead><tr>";
-  for (const c of columns) html += `<th>${escapeHtml(c)}</th>`;
+  // Kapitaliser overskrifter (i tillegg til CSS)
+  for (const c of columns) html += `<th>${escapeHtml(String(c).toUpperCase())}</th>`;
   html += "</tr></thead><tbody>";
   for (const r of rows) {
     html += "<tr>";
@@ -199,7 +200,6 @@ function getLatestSnapshotRowJsonForHolder(holderId) {
 }
 
 function getLatestSnapshotRowJsonForPermitHolder(permitId, holderId) {
-  // Prøv nyeste snapshotdato først
   const q1 = `
     SELECT row_json
     FROM permit_snapshot
@@ -209,7 +209,6 @@ function getLatestSnapshotRowJsonForPermitHolder(permitId, holderId) {
   const r1 = runQuery(q1, { $d: latestMeta.snapshot_date, $p: permitId, $h: holderId });
   if (r1.length) return r1[0][0];
 
-  // fallback: nyeste tilgjengelige for permit+holder
   const q2 = `
     SELECT row_json
     FROM permit_snapshot
@@ -243,7 +242,6 @@ function tryExtract(obj, key) {
 
 // -------------------- STATUS helper --------------------
 function getPermitStatusForHolder(holderId, permitId) {
-  // Aktiv hvis finnes en rad med valid_to NULL
   const qActive = `
     SELECT 1
     FROM ownership_intervals
@@ -253,7 +251,6 @@ function getPermitStatusForHolder(holderId, permitId) {
   const a = runQuery(qActive, { $h: holderId, $p: permitId });
   if (a.length > 0) return "Aktiv";
 
-  // Ellers: finn seneste valid_to for denne innehaveren på denne tillatelsen
   const qEnded = `
     SELECT valid_to
     FROM ownership_intervals
@@ -288,8 +285,6 @@ function renderHolderDetailsTable(containerId, holderId, permitIds) {
   const rows = [];
   for (const permitId of permitIds) {
     const rowJson = getLatestSnapshotRowJsonForPermitHolder(permitId, holderId);
-    // Hvis vi ikke finner snapshot-rad for permit+holder (kan skje hvis historikken ligger før første snapshot),
-    // så kan vi fortsatt vise en rad med minst permitId + status.
     if (!rowJson) {
       rows.push([
         getPermitStatusForHolder(holderId, permitId),
@@ -300,28 +295,22 @@ function renderHolderDetailsTable(containerId, holderId, permitIds) {
 
     const obj = JSON.parse(rowJson);
 
-    const art = tryExtract(obj, "ART");
-    const formaal = tryExtract(obj, "FORMÅL");
-    const prodForm = tryExtract(obj, "PRODUKSJONSFORM");
-    const tildeling = tryExtract(obj, "TILDELINGSTIDSPUNKT");
     const kap = tryExtract(obj, "TILL_KAP");
     const enh = tryExtract(obj, "TILL_ENHET");
     const kapStr = [kap, enh].filter(Boolean).join(" ").trim();
-    const prodOmr = tryExtract(obj, "PROD_OMR");
 
     rows.push([
       getPermitStatusForHolder(holderId, permitId),
       permitId,
-      art,
-      formaal,
-      prodForm,
-      tildeling,
+      tryExtract(obj, "ART"),
+      tryExtract(obj, "FORMÅL"),
+      tryExtract(obj, "PRODUKSJONSFORM"),
+      tryExtract(obj, "TILDELINGSTIDSPUNKT"),
       kapStr,
-      prodOmr
+      tryExtract(obj, "PROD_OMR")
     ]);
   }
 
-  // Sortering: aktive først, så permit-id
   const statusRank = (s) => (String(s).startsWith("Aktiv") ? 0 : 1);
   rows.sort((a, b) => {
     const ra = statusRank(a[0]);
@@ -367,7 +356,6 @@ document.getElementById("holderNowBtn").addEventListener("click", () => {
     return;
   }
 
-  // Selskapsnavn (fra snapshot)
   let navn = "";
   const anyRowJson = getLatestSnapshotRowJsonForHolder(holderId);
   if (anyRowJson) {
@@ -375,23 +363,19 @@ document.getElementById("holderNowBtn").addEventListener("click", () => {
     navn = tryExtract(obj, "NAVN");
   }
 
-  const totalCount = allPermitIds.length;                      // alltid hele databasen
+  const totalCount = allPermitIds.length;
   const grunnrenteCount = countGrunnrenteForPermits(allPermitIds);
-  const viewCount = holderNowPermitIds.length;
 
-  const summaryObj = {
+  // Ingen "antall i visning" (som du ønsket)
+  renderKeyValue("holderNowSummary", {
     "ORG.NR/PERS.NR": holderId,
     "Selskapsnavn": navn || "(mangler)",
     "Antall tillatelser (totalt)": totalCount,
     "Antall tillatelser (Grunnrenteskatteplikt)": grunnrenteCount
-  };
-  if (activeFilter) summaryObj["Antall i visning (aktivt filter)"] = viewCount;
-
-  renderKeyValue("holderNowSummary", summaryObj);
+  });
 
   document.getElementById("holderNowDetails").innerHTML = "";
-  // Vis detaljer-knapp er aktiv så lenge det finnes noe å vise i visning (kan være 0 hvis filteret er veldig stramt)
-  document.getElementById("holderNowDetailsBtn").disabled = (activeFilter && viewCount === 0);
+  document.getElementById("holderNowDetailsBtn").disabled = (activeFilter && holderNowPermitIds.length === 0);
 });
 
 document.getElementById("holderNowDetailsBtn").addEventListener("click", () => {
@@ -415,7 +399,7 @@ document.getElementById("holderHistBtn").addEventListener("click", () => {
   const allRows = runQuery(qAll, { $h: holderId });
   const allPermitIds = allRows.map(r => r[0]);
 
-  // 2) Visning (med aktivt filter): unike permits over tid
+  // 2) Visning (med aktivt filter)
   const fc = filterConditionSql("permit_id");
   const qView = `
     SELECT DISTINCT permit_id
@@ -434,7 +418,6 @@ document.getElementById("holderHistBtn").addEventListener("click", () => {
     return;
   }
 
-  // Selskapsnavn (fra snapshot)
   let navn = "";
   const anyRowJson = getLatestSnapshotRowJsonForHolder(holderId);
   if (anyRowJson) {
@@ -442,22 +425,19 @@ document.getElementById("holderHistBtn").addEventListener("click", () => {
     navn = tryExtract(obj, "NAVN");
   }
 
-  const totalCount = allPermitIds.length;                      // alltid hele databasen
+  const totalCount = allPermitIds.length;
   const grunnrenteCount = countGrunnrenteForPermits(allPermitIds);
-  const viewCount = holderHistPermitIds.length;
 
-  const summaryObj = {
+  // Ingen "antall i visning" (som du ønsket)
+  renderKeyValue("holderHistSummary", {
     "ORG.NR/PERS.NR": holderId,
     "Selskapsnavn": navn || "(mangler)",
     "Antall tillatelser (totalt)": totalCount,
     "Antall tillatelser (Grunnrenteskatteplikt)": grunnrenteCount
-  };
-  if (activeFilter) summaryObj["Antall i visning (aktivt filter)"] = viewCount;
-
-  renderKeyValue("holderHistSummary", summaryObj);
+  });
 
   document.getElementById("holderHistDetails").innerHTML = "";
-  document.getElementById("holderHistDetailsBtn").disabled = (activeFilter && viewCount === 0);
+  document.getElementById("holderHistDetailsBtn").disabled = (activeFilter && holderHistPermitIds.length === 0);
 });
 
 document.getElementById("holderHistDetailsBtn").addEventListener("click", () => {
@@ -466,7 +446,7 @@ document.getElementById("holderHistDetailsBtn").addEventListener("click", () => 
   renderHolderDetailsTable("holderHistDetails", holderId, holderHistPermitIds);
 });
 
-// -------------------- Permit views (som før: kort + detaljer) --------------------
+// -------------------- Permit views (uendret fra tidligere) --------------------
 function renderKeyValueTableHtml(obj, title = null) {
   const keys = Object.keys(obj || {});
   if (!obj || keys.length === 0) return "<p>Ingen data.</p>";
@@ -500,7 +480,6 @@ function cardFromSummary(summaryObj, permitId, holderId, preferDate, detailsTarg
   return `${title}<div class="row">${detailsBtn}</div>${kv}`;
 }
 
-// Permit -> owner (NOW)
 document.getElementById("permitNowBtn").addEventListener("click", () => {
   const permitId = document.getElementById("permitNowInput").value.trim();
   if (!permitId) { clearPermitNowUI(); return; }
@@ -544,7 +523,6 @@ document.getElementById("permitNowBtn").addEventListener("click", () => {
   document.getElementById("permitNowDetails").innerHTML = "";
 });
 
-// Permit -> owners (HISTORY)
 document.getElementById("permitHistBtn").addEventListener("click", () => {
   const permitId = document.getElementById("permitHistInput").value.trim();
   if (!permitId) { clearPermitHistUI(); return; }
@@ -591,7 +569,6 @@ document.getElementById("permitHistBtn").addEventListener("click", () => {
   document.getElementById("permitHistDetails").innerHTML = "";
 });
 
-// Global Detaljer-knapper
 document.addEventListener("click", (e) => {
   const btn = e.target.closest(".details-btn");
   if (!btn) return;
