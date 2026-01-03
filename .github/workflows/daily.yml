@@ -56,7 +56,7 @@ jobs:
           gh release view latest >/dev/null 2>&1 || gh release create latest --title "latest" --notes "Automatisk oppdatert daglig."
           # Last opp assets (overskriver hvis finnes)
           gh release upload latest "${{ steps.fetch.outputs.raw_gz }}" --clobber
-          gh release upload latest work/latest.sqlite.gz --clobber
+          gh release upload latest docs/latest.sqlite.gz --clobber
 
       - name: Update docs/latest.json
         run: |
