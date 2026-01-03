@@ -1,7 +1,25 @@
+/* =========================
+   Base
+========================= */
+:root{
+  --blue: #2c436b;
+  --table-head: #2c436b;
+
+  --filter-inactive: #e7b78a;
+  --filter-active: #f0d2b6;
+
+  --zebra: #eff3f9;
+
+  --text: #111;
+  --muted: #555;
+  --border: #e9e9e9;
+}
+
 body {
   font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   margin: 0;
   padding: 0;
+  color: var(--text);
 }
 
 header {
@@ -15,7 +33,9 @@ main {
   margin: 0 auto;
 }
 
-/* ---------------- Tabs (visninger) ---------------- */
+/* =========================
+   Tabs (4 visninger)
+========================= */
 .tabs {
   display: flex;
   gap: 8px;
@@ -26,25 +46,27 @@ main {
 .tab {
   padding: 10px 14px;
   border-radius: 12px;
-  border: 1px solid #2c436b;
-  background: #2c436b;
-  color: #ffffff;
+  border: 1px solid var(--blue);
+  background: var(--blue);
+  color: #fff;
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.03em;
 }
 
 .tab:hover {
-  background: #3a578a;
-  border-color: #3a578a;
+  filter: brightness(1.08);
 }
 
 .tab.active {
+  /* litt lysere for å markere aktiv fane */
   background: #4b6fb3;
   border-color: #4b6fb3;
 }
 
-/* ---------------- Panels ---------------- */
+/* =========================
+   Panels
+========================= */
 .panel {
   display: none;
   border: 1px solid #eee;
@@ -56,10 +78,21 @@ main {
   display: block;
 }
 
-/* ---------------- Inputs & buttons ---------------- */
+/* =========================
+   Layout helpers
+========================= */
+.row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 8px 0 12px;
+}
+
 label {
   display: block;
-  margin: 10px 0;
+  margin: 10px 0 6px;
+  font-weight: 600;
 }
 
 input {
@@ -69,14 +102,9 @@ input {
   border: 1px solid #ccc;
 }
 
-.row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
-  margin: 8px 0 12px;
-}
-
+/* =========================
+   Buttons (generelt)
+========================= */
 button {
   padding: 10px 12px;
   border-radius: 10px;
@@ -85,12 +113,47 @@ button {
   cursor: pointer;
 }
 
+button:hover {
+  filter: brightness(0.98);
+}
+
 button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
 
-/* ---------------- Results ---------------- */
+/* =========================
+   Filterknapper (header)
+   Aktiv: #f0d2b6
+   Inaktiv: #e7b78a (nedtonet)
+========================= */
+.filter-btn {
+  border: 1px solid #d7a56f;
+  background: var(--filter-inactive);
+  color: var(--blue);
+  font-weight: 800;
+
+  /* "mindre tyngde" for inaktive */
+  opacity: 0.85;
+  box-shadow: none;
+}
+
+.filter-btn:hover {
+  opacity: 0.95;
+}
+
+.filter-btn.active {
+  background: var(--filter-active);
+  border-color: var(--filter-active);
+
+  /* mer tyngde for aktiv */
+  opacity: 1;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.06);
+}
+
+/* =========================
+   Text helpers
+========================= */
 .result {
   margin-top: 12px;
   overflow-x: auto;
@@ -98,12 +161,12 @@ button:disabled {
 
 .hint {
   margin: 6px 0 0;
-  color: #555;
+  color: var(--muted);
   font-size: 0.95rem;
 }
 
 small {
-  color: #555;
+  color: var(--muted);
 }
 
 code {
@@ -112,54 +175,16 @@ code {
   border-radius: 6px;
 }
 
-/* ---------------- Tables ---------------- */
-table {
-  border-collapse: collapse;
-  width: 100%;
-  margin-top: 10px;
+/* =========================
+   Headings
+========================= */
+h1, h2, h3, h4 {
+  margin: 0 0 10px;
 }
 
-th,
-td {
-  border: 1px solid #eee;
-  padding: 8px;
-  text-align: left;
-  vertical-align: top;
-}
-
-th {
-  font-family: inherit;
-  font-size: 0.85rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  font-weight: 700;
-  background: #2c436b;
-  color: #ffffff;
-}
-
-/* Zebra KUN for detalj-områder */
-.details-area table.zebra tbody tr:nth-child(even) {
-  background: #eff3f9;
-}
-
-/* Luft mellom oppsummering og detaljer */
-#holderNowDetails,
-#holderHistDetails {
-  margin-top: 22px;
-}
-
-.result table {
-  margin-top: 12px;
-}
-
-/* ---------------- Headings ---------------- */
-h3 {
-  margin-top: 18px;
-}
-
-h4 {
-  margin: 10px 0 6px;
-}
+h2 { margin-top: 0; }
+h3 { margin-top: 18px; }
+h4 { margin: 10px 0 6px; }
 
 hr {
   border: none;
@@ -167,11 +192,55 @@ hr {
   margin: 14px 0;
 }
 
-/* ---------------- Filter buttons ---------------- */
-.filter-btn.active {
-  border-color: #000;
-  font-weight: 600;
+/* =========================
+   Tables
+========================= */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-top: 10px;
 }
+
+th, td {
+  border: 1px solid #eee;
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+/* Enhetlig tabell-header: font, størrelse, uppercase */
+th {
+  font-family: inherit;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 800;
+
+  background: var(--table-head);
+  color: #ffffff;
+}
+
+/* Zebra kun i detalj-tabeller (ikke i alle tabeller) */
+.details-area table.zebra tbody tr:nth-child(even) {
+  background: var(--zebra);
+}
+
+/* Luft mellom oppsummering og detalj-tabell */
+#holderNowDetails,
+#holderHistDetails,
+#permitNowDetails,
+#permitHistDetails {
+  margin-top: 22px;
+}
+
+/* Resultat-tabeller litt luft */
+.result table {
+  margin-top: 12px;
+}
+
+/* =========================
+   Footer (status nederst)
+========================= */
 .page-footer {
   margin-top: 18px;
   padding: 12px 2px 0;
@@ -180,7 +249,6 @@ hr {
 
 #statusFooter {
   margin: 0;
-  color: #555;
+  color: var(--muted);
   font-size: 0.95rem;
 }
-
