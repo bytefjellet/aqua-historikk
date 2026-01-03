@@ -17,6 +17,207 @@ let exportState = {
   permitHist: { columns: [], rows: [], filename: "" }
 };
 
+// -------------------- Details table UI state --------------------
+const detailsTableState = {
+  holderNowDetails: null,
+  holderHistDetails: null
+};
+
+function cellToText(cell) {
+  if (cell == null) return "";
+  // Støtter våre HTML-celler: {__html: "..."}
+  if (typeof cell === "object" && cell.__html) {
+    // Fjern HTML tags for sortering/filtrering
+    return String(cell.__html).replace(/<[^>]*>/g, "").trim();
+  }
+  return String(cell).trim();
+}
+
+function uniqueValues(rows, colIdx) {
+  const set = new Set();
+  for (const r of rows) {
+    const v = cellToText(r[colIdx]);
+    if (v) set.add(v);
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "no"));
+}
+
+function applyDetailsFilters(baseRows, columns, state) {
+  let rows = baseRows.slice();
+
+  // Fritekstfilter
+  if (state.text && state.text.trim() !== "") {
+    const q = state.text.trim().toLowerCase();
+    rows = rows.filter(r => r.some(c => cellToText(c).toLowerCase().includes(q)));
+  }
+
+  // Dropdown-filters
+  for (const [colName, selected] of Object.entries(state.filters || {})) {
+    if (!selected) continue;
+    const idx = columns.indexOf(colName);
+    if (idx >= 0) {
+      rows = rows.filter(r => cellToText(r[idx]) === selected);
+    }
+  }
+
+  // Sortering
+  if (state.sortCol != null) {
+    const idx = state.sortCol;
+    const dir = state.sortDir === "desc" ? -1 : 1;
+    rows.sort((a, b) => {
+      const av = cellToText(a[idx]);
+      const bv = cellToText(b[idx]);
+      // Numerisk dersom begge ser ut som tall
+      const an = Number(av.replace(",", "."));
+      const bn = Number(bv.replace(",", "."));
+      const bothNumeric = !Number.isNaN(an) && !Number.isNaN(bn) && av !== "" && bv !== "";
+      if (bothNumeric) return (an - bn) * dir;
+      return av.localeCompare(bv, "no") * dir;
+    });
+  }
+
+  return rows;
+}
+
+function renderDetailsToolbarAndTable(containerId) {
+  const s = detailsTableState[containerId];
+  const el = document.getElementById(containerId);
+  if (!el || !s) return;
+
+  const columns = s.columns;
+  const baseRows = s.baseRows;
+
+  // Hvilke kolonner er skjult?
+  const hidden = s.hiddenCols || new Set();
+
+  // Beregn rader etter filter/sort
+  const rows = applyDetailsFilters(baseRows, columns, s);
+
+  // Bygg toolbar (dropdowns + fritekst + kolonnevalg)
+  // Vi tilbyr filtre for "type"-felt: STATUS, ART, FORMÅL, PRODUKSJONSFORM
+  const filterCols = ["STATUS", "ART", "FORMÅL", "PRODUKSJONSFORM"].filter(c => columns.includes(c));
+
+  const filterControls = filterCols.map(colName => {
+    const idx = columns.indexOf(colName);
+    const options = uniqueValues(baseRows, idx);
+    const selected = (s.filters && s.filters[colName]) ? s.filters[colName] : "";
+    const optsHtml = [`<option value="">Alle</option>`]
+      .concat(options.map(v => `<option value="${escapeHtml(v)}"${v === selected ? " selected" : ""}>${escapeHtml(v)}</option>`))
+      .join("");
+    return `
+      <label class="dt-label">${escapeHtml(colName)}
+        <select class="dt-select" data-dt-filter="${escapeHtml(colName)}">
+          ${optsHtml}
+        </select>
+      </label>
+    `;
+  }).join("");
+
+  // Kolonne toggles
+  const colToggles = columns.map((c) => {
+    const checked = !hidden.has(c);
+    return `
+      <label class="dt-check">
+        <input type="checkbox" data-dt-col="${escapeHtml(c)}" ${checked ? "checked" : ""}>
+        ${escapeHtml(String(c).toUpperCase())}
+      </label>
+    `;
+  }).join("");
+
+  // Tabell-header (klikk for sortering) – respekter skjulte kolonner
+  const headerHtml = columns.map((c, idx) => {
+    if (hidden.has(c)) return "";
+    const isSort = s.sortCol === idx;
+    const arrow = isSort ? (s.sortDir === "desc" ? " ▼" : " ▲") : "";
+    return `<th data-dt-sort="${idx}" class="dt-sort">${escapeHtml(String(c).toUpperCase())}${arrow}</th>`;
+  }).join("");
+
+  // Tabell-body – respekter skjulte kolonner
+  const bodyHtml = rows.map(r => {
+    const tds = r.map((cell, i) => {
+      if (hidden.has(columns[i])) return "";
+      if (cell && typeof cell === "object" && cell.__html) return `<td>${cell.__html}</td>`;
+      return `<td>${cell == null ? "" : escapeHtml(String(cell))}</td>`;
+    }).join("");
+    return `<tr>${tds}</tr>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div class="details-area">
+      <div class="details-toolbar">
+        <div class="details-toolbar-row">
+          <label class="dt-label">Søk i detaljer
+            <input class="dt-input" type="search" placeholder="Filtrer i tabellen…" value="${escapeHtml(s.text || "")}">
+          </label>
+          ${filterControls}
+          <div class="dt-meta">${rows.length} rader</div>
+        </div>
+
+        <details class="dt-columns">
+          <summary>Vis/skjul kolonner</summary>
+          <div class="dt-columns-grid">
+            ${colToggles}
+          </div>
+        </details>
+      </div>
+
+      <table class="zebra">
+        <thead><tr>${headerHtml}</tr></thead>
+        <tbody>${bodyHtml}</tbody>
+      </table>
+    </div>
+  `;
+
+  // Wire events (delegert inne i container)
+  const toolbarRoot = el.querySelector(".details-area");
+  if (!toolbarRoot) return;
+
+  // Fritekst
+  const textInput = toolbarRoot.querySelector(".dt-input");
+  if (textInput) {
+    textInput.addEventListener("input", (e) => {
+      s.text = e.target.value || "";
+      renderDetailsToolbarAndTable(containerId);
+    });
+  }
+
+  // Dropdowns
+  toolbarRoot.querySelectorAll("select[data-dt-filter]").forEach(sel => {
+    sel.addEventListener("change", (e) => {
+      const col = e.target.getAttribute("data-dt-filter");
+      s.filters = s.filters || {};
+      s.filters[col] = e.target.value || "";
+      renderDetailsToolbarAndTable(containerId);
+    });
+  });
+
+  // Sortering ved klikk på th
+  toolbarRoot.querySelectorAll("th[data-dt-sort]").forEach(th => {
+    th.addEventListener("click", (e) => {
+      const idx = Number(e.target.getAttribute("data-dt-sort"));
+      if (s.sortCol === idx) {
+        s.sortDir = (s.sortDir === "asc") ? "desc" : "asc";
+      } else {
+        s.sortCol = idx;
+        s.sortDir = "asc";
+      }
+      renderDetailsToolbarAndTable(containerId);
+    });
+  });
+
+  // Skjul/vis kolonner
+  toolbarRoot.querySelectorAll('input[type="checkbox"][data-dt-col]').forEach(chk => {
+    chk.addEventListener("change", (e) => {
+      const col = e.target.getAttribute("data-dt-col");
+      s.hiddenCols = s.hiddenCols || new Set();
+      if (e.target.checked) s.hiddenCols.delete(col);
+      else s.hiddenCols.add(col);
+      renderDetailsToolbarAndTable(containerId);
+    });
+  });
+}
+
+
 // -------------------- UI helpers --------------------
 function setStatus(msg) {
   const footer = document.getElementById("statusFooter");
@@ -580,8 +781,20 @@ function renderHolderDetailsTable(containerId, holderId, permitIds) {
     return aTxt.localeCompare(bTxt, "no");
   });
 
-  renderTable(containerId, columns, rows, { wrapDetailsArea: true, zebra: true });
-  return { columns, rows };
+  // Lagre state for sortering/filtrering/kolonner og render med toolbar
+detailsTableState[containerId] = {
+  columns,
+  baseRows: rows,          // original
+  text: "",
+  filters: {},             // STATUS/ART/FORMÅL/PRODUKSJONSFORM
+  sortCol: null,
+  sortDir: "asc",
+  hiddenCols: new Set()    // tom = vis alt
+};
+
+renderDetailsToolbarAndTable(containerId);
+return { columns, rows };
+
 }
 
 // -------------------- SØK: Innehaver – gjeldende --------------------
