@@ -10,6 +10,12 @@
   <header>
     <h1>Akvakulturregisteret – historikk</h1>
     <p id="status">Laster…</p>
+
+    <div class="row">
+      <button id="filterAllBtn" class="filter-btn active">Alle</button>
+      <button id="filterGrunnrenteBtn" class="filter-btn">Grunnrenteskatteplikt</button>
+      <small id="activeFilterLabel"></small>
+    </div>
   </header>
 
   <main>
@@ -33,7 +39,7 @@
       <div class="result" id="holderNowResult"></div>
 
       <h3>Detaljer</h3>
-      <p class="hint">Klikk “Detaljer” på en rad for å vise hele raden fra siste snapshot.</p>
+      <p class="hint">Klikk “Detaljer” på et kort for å vise hele raden fra snapshot.</p>
       <div class="result" id="holderNowDetails"></div>
     </section>
 
@@ -50,7 +56,7 @@
       <div class="result" id="holderHistResult"></div>
 
       <h3>Detaljer</h3>
-      <p class="hint">Klikk “Detaljer” på en rad for å vise hele raden (fra snapshot ved startdato om mulig, ellers siste snapshot).</p>
+      <p class="hint">Klikk “Detaljer” på et kort for å vise hele raden fra snapshot (helst ved periodens startdato).</p>
       <div class="result" id="holderHistDetails"></div>
     </section>
 
@@ -58,17 +64,16 @@
     <section class="panel" id="permit-now">
       <h2>Tillatelse → eier (i dag)</h2>
       <label>TILL_NR
-        <input id="permitNowInput" placeholder="f.eks. ABC123 (nøyaktig som i CSV)" />
+        <input id="permitNowInput" placeholder="f.eks. AA L 0004 (nøyaktig som i CSV)" />
       </label>
-
       <div class="row">
         <button id="permitNowBtn">Søk</button>
-        <button id="permitNowDetailsBtn">Vis detaljer (hele raden)</button>
       </div>
 
       <div class="result" id="permitNowResult"></div>
 
       <h3>Detaljer</h3>
+      <p class="hint">Klikk “Detaljer” på kortet for å vise hele raden fra snapshot.</p>
       <div class="result" id="permitNowDetails"></div>
     </section>
 
@@ -76,7 +81,7 @@
     <section class="panel" id="permit-history">
       <h2>Tillatelse → eier (historikk)</h2>
       <label>TILL_NR
-        <input id="permitHistInput" placeholder="f.eks. ABC123" />
+        <input id="permitHistInput" placeholder="f.eks. AA L 0004" />
       </label>
       <div class="row">
         <button id="permitHistBtn">Søk</button>
@@ -85,7 +90,7 @@
       <div class="result" id="permitHistResult"></div>
 
       <h3>Detaljer</h3>
-      <p class="hint">Klikk “Detaljer” på en eier-periode for å vise hele raden fra snapshot ved periodens startdato (om mulig).</p>
+      <p class="hint">Klikk “Detaljer” på et kort for å vise hele raden fra snapshot ved periodens startdato (om mulig).</p>
       <div class="result" id="permitHistDetails"></div>
     </section>
   </main>
