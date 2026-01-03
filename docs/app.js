@@ -1,10 +1,8 @@
 let db = null;
 let latestMeta = null;
 
-// Aktivt filter: null = alle, ellers tag-navn (f.eks. "Grunnrenteskatteplikt")
 let activeFilter = null;
 
-// Holder siste søkeresultat (permitId-lister) så “Vis detaljer” kan bruke dem (disse følger aktivt filter)
 let holderNowPermitIds = [];
 let holderHistPermitIds = [];
 
@@ -468,13 +466,14 @@ function renderKeyValueTableHtml(obj, title = null) {
 
   let html = "";
   if (title) html += `<h4>${escapeHtml(title)}</h4>`;
-  // NB: class="details-kv" slik at CSS kan gi zebra kun her
-  html += `<table class="details-kv"><thead><tr><th>Felt</th><th>Verdi</th></tr></thead><tbody>`;
+  html += `<div class="details-area">`;
+  html += `<table class="details-kv zebra"><thead><tr><th>Felt</th><th>Verdi</th></tr></thead><tbody>`;
   for (const key of Object.keys(o).sort()) {
     const val = o[key];
     html += `<tr><td><code>${escapeHtml(key)}</code></td><td>${val == null ? "" : escapeHtml(String(val))}</td></tr>`;
   }
   html += "</tbody></table>";
+  html += `</div>`;
   return html;
 }
 
@@ -601,7 +600,7 @@ document.addEventListener("click", (e) => {
   if (!btn) return;
 
   const targetId = btn.getAttribute("data-target");
-  const permitId = btn.getAttribute("data-permit"); // DB-format (mellomrom)
+  const permitId = btn.getAttribute("data-permit");
   const holderId = (btn.getAttribute("data-holder") || "").trim() || null;
   const date = (btn.getAttribute("data-date") || "").trim() || null;
 
