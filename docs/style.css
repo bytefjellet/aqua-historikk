@@ -12,6 +12,8 @@
   --muted: #555;
   --border: #e9e9e9;
 
+  --header-bg: #f6f8fb;
+
   --content-max: 1100px;
 }
 
@@ -20,18 +22,19 @@ body {
   margin: 0;
   padding: 0;
   color: var(--text);
+  background: #ffffff;
 }
 
 /* =========================
    Header aligned with main
-   (samme innrykk/bredde)
+   + diskret bakgrunn
 ========================= */
 header {
   padding: 16px;
   border-bottom: 1px solid #ddd;
+  background: var(--header-bg);
 }
 
-/* Sentrer alle direkte barn i header til samme bredde som main */
 header > * {
   max-width: var(--content-max);
   margin-left: auto;
@@ -50,6 +53,7 @@ main {
 
 /* =========================
    Tabs (4 visninger)
+   Kompaktere høyde
 ========================= */
 .tabs {
   display: flex;
@@ -59,14 +63,16 @@ main {
 }
 
 .tab {
-  padding: 10px 14px;
-  border-radius: 12px;
+  padding: 7px 12px;          /* redusert høyde */
+  border-radius: 10px;
   border: 1px solid var(--blue);
   background: var(--blue);
   color: #fff;
   cursor: pointer;
   font-weight: 800;
+  font-size: 0.9rem;          /* litt mindre tekst */
   letter-spacing: 0.03em;
+  line-height: 1.2;
 }
 
 .tab:hover {
@@ -138,9 +144,7 @@ button:disabled {
 
 /* =========================
    Filterknapper (header)
-   - Pill-aktige
-   - Samme blå profil som faner
-   - Aktiv = litt lysere (som aktiv fane)
+   Kompakte pills – blå profil
 ========================= */
 .filter-btn {
   border: 1px solid var(--blue);
@@ -148,15 +152,19 @@ button:disabled {
   color: #fff;
   font-weight: 800;
 
-  /* pill-look */
   border-radius: 999px;
-  padding: 10px 16px;
+  padding: 6px 14px;
+  font-size: 0.9rem;
+  line-height: 1.2;
 
-  /* “mindre tyngde” når inaktiv */
-  opacity: 0.82;
+  opacity: 0.8;
   box-shadow: none;
 
-  transition: opacity 120ms ease, filter 120ms ease, background 120ms ease, border-color 120ms ease;
+  transition:
+    opacity 120ms ease,
+    filter 120ms ease,
+    background 120ms ease,
+    border-color 120ms ease;
 }
 
 .filter-btn:hover {
@@ -202,6 +210,10 @@ h1, h2, h3, h4 {
   margin: 0 0 10px;
 }
 
+h1 {
+  margin-bottom: 12px;
+}
+
 h3 { margin-top: 18px; }
 h4 { margin: 10px 0 6px; }
 
@@ -227,19 +239,17 @@ th, td {
   vertical-align: top;
 }
 
-/* Enhetlig tabell-header: font, størrelse, uppercase */
 th {
   font-family: inherit;
   font-size: 0.85rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   font-weight: 800;
-
   background: var(--table-head);
   color: #ffffff;
 }
 
-/* Zebra kun i detalj-tabeller (ikke i alle tabeller) */
+/* Zebra kun i detalj-tabeller */
 .details-area table.zebra tbody tr:nth-child(even) {
   background: var(--zebra);
 }
