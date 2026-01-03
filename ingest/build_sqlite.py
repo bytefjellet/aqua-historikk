@@ -108,31 +108,36 @@ def build_today_map(clean_csv_path: str, snapshot_date: str, rules: list):
     """
     today_owner_by_permit = {}
     snapshots = []
+
     with open(clean_csv_path, "r", encoding="utf-8") as f:
-    sample = f.read(8192)
-    f.seek(0)
-    delim = detect_delimiter(sample)
-
-    reader = csv.DictReader(f, delimiter=delim)
-    cols = reader.fieldnames or []
-
+        sample = f.read(8192)
+        f.seek(0)
+        delim = detect_delimiter(sample)
+    
+        reader = csv.DictReader(f, delimiter=delim)
+        cols = reader.fieldnames or []
+    
         if PERMIT_COL not in cols or HOLDER_COL not in cols:
-            raise RuntimeError(f"Mangler kolonner. Fant: {cols}. Må ha '{PERMIT_COL}' og '{HOLDER_COL}'.")
-
+            raise RuntimeError(
+                f"Mangler kolonner. Fant: {cols}. "
+                f"Må ha '{PERMIT_COL}' og '{HOLDER_COL}'."
+            )
+    
         for row in reader:
             if not row_passes_filters(row, rules):
                 continue
-
+    
             permit_id = (row.get(PERMIT_COL) or "").strip()
             holder_id = (row.get(HOLDER_COL) or "").strip()
             if not permit_id or not holder_id:
                 continue
-
+    
             row_json = json.dumps(row, ensure_ascii=False, sort_keys=True)
             row_hash = sha256_text(row_json)
-
+    
             snapshots.append((snapshot_date, permit_id, holder_id, row_hash, row_json))
             today_owner_by_permit[permit_id] = holder_id
+
 
     return today_owner_by_permit, snapshots, cols
 
