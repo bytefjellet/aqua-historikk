@@ -25,3 +25,4 @@ table { border-collapse: collapse; width: 100%; }
 th, td { border: 1px solid #eee; padding: 8px; text-align: left; vertical-align: top; }
 
 h3 { margin-top: 18px; }
+hr { border: none; border-top: 1px solid #eee; margin: 14px 0; }
