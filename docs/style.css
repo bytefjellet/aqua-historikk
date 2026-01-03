@@ -172,3 +172,15 @@ hr {
   border-color: #000;
   font-weight: 600;
 }
+.page-footer {
+  margin-top: 18px;
+  padding: 12px 2px 0;
+  border-top: 1px solid #eee;
+}
+
+#statusFooter {
+  margin: 0;
+  color: #555;
+  font-size: 0.95rem;
+}
+
