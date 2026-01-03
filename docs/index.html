@@ -10,7 +10,14 @@
   <header>
     <h1>Akvakulturregisteret – historikk</h1>
 
-    <!-- beholdes kun for bakoverkompatibilitet, men vises ikke -->
+    <!-- Brødsmulesti -->
+    <nav class="breadcrumb" aria-label="Brødsmulesti">
+      <span class="crumb">Forside</span>
+      <span class="separator">›</span>
+      <span class="crumb current">Akvakulturregisteret – historikk</span>
+    </nav>
+
+    <!-- skjult legacy-status -->
     <p id="status" style="display:none">Laster…</p>
 
     <div class="row">
@@ -98,22 +105,17 @@
       <div class="result" id="permitHistResult"></div>
 
       <h3>Detaljer</h3>
-      <p class="hint">Klikk «Vis detaljer» på en eierperiode for å vise snapshot (hel rad) ved periodens startdato, hvis tilgjengelig.</p>
+      <p class="hint">Klikk «Vis detaljer» på en eierperiode for å vise snapshot.</p>
       <div class="result" id="permitHistDetails"></div>
     </section>
 
-    <!-- Footer-status under nederste synlige boks -->
     <footer class="page-footer">
       <p id="statusFooter">Laster…</p>
     </footer>
   </main>
 
-  <!-- pako (gzip) -->
   <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
-
-  <!-- sql.js -->
   <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js"></script>
-
   <script src="./app.js"></script>
 </body>
 </html>
