@@ -51,7 +51,6 @@ function renderTable(containerId, columns, rows) {
     return;
   }
   let html = "<table><thead><tr>";
-  // Kapitaliser overskrifter (i tillegg til CSS)
   for (const c of columns) html += `<th>${escapeHtml(String(c).toUpperCase())}</th>`;
   html += "</tr></thead><tbody>";
   for (const r of rows) {
@@ -79,6 +78,13 @@ function renderKeyValue(containerId, obj, title = null) {
   }
   html += "</tbody></table>";
   el.innerHTML = html;
+}
+
+// -------------------- Formatting helpers --------------------
+function formatPermitIdForDisplay(permitId) {
+  // Vis med bindestrek istedenfor mellomrom: "F A 0011" -> "F-A-0011"
+  // Ikke endre permitId som brukes til DB-oppslag, kun display.
+  return String(permitId).trim().replace(/\s+/g, "-");
 }
 
 // -------------------- Clear helpers --------------------
@@ -148,7 +154,6 @@ function runQuery(sql, params = {}) {
 
 // -------------------- Filter SQL helpers --------------------
 function filterConditionSql(permitColumnName = "permit_id") {
-  // Filteret gjelder basert på tag i permit_tags for nyeste snapshot.
   if (!activeFilter) return { sql: "1=1", params: {} };
   return {
     sql: `${permitColumnName} IN (
@@ -285,10 +290,12 @@ function renderHolderDetailsTable(containerId, holderId, permitIds) {
   const rows = [];
   for (const permitId of permitIds) {
     const rowJson = getLatestSnapshotRowJsonForPermitHolder(permitId, holderId);
+    const displayPermit = formatPermitIdForDisplay(permitId);
+
     if (!rowJson) {
       rows.push([
         getPermitStatusForHolder(holderId, permitId),
-        permitId, "", "", "", "", "", ""
+        displayPermit, "", "", "", "", "", ""
       ]);
       continue;
     }
@@ -301,7 +308,7 @@ function renderHolderDetailsTable(containerId, holderId, permitIds) {
 
     rows.push([
       getPermitStatusForHolder(holderId, permitId),
-      permitId,
+      displayPermit,
       tryExtract(obj, "ART"),
       tryExtract(obj, "FORMÅL"),
       tryExtract(obj, "PRODUKSJONSFORM"),
@@ -366,7 +373,6 @@ document.getElementById("holderNowBtn").addEventListener("click", () => {
   const totalCount = allPermitIds.length;
   const grunnrenteCount = countGrunnrenteForPermits(allPermitIds);
 
-  // Ingen "antall i visning" (som du ønsket)
   renderKeyValue("holderNowSummary", {
     "ORG.NR/PERS.NR": holderId,
     "Selskapsnavn": navn || "(mangler)",
@@ -428,7 +434,6 @@ document.getElementById("holderHistBtn").addEventListener("click", () => {
   const totalCount = allPermitIds.length;
   const grunnrenteCount = countGrunnrenteForPermits(allPermitIds);
 
-  // Ingen "antall i visning" (som du ønsket)
   renderKeyValue("holderHistSummary", {
     "ORG.NR/PERS.NR": holderId,
     "Selskapsnavn": navn || "(mangler)",
@@ -446,7 +451,7 @@ document.getElementById("holderHistDetailsBtn").addEventListener("click", () => 
   renderHolderDetailsTable("holderHistDetails", holderId, holderHistPermitIds);
 });
 
-// -------------------- Permit views (uendret fra tidligere) --------------------
+// -------------------- Permit views (uendret) --------------------
 function renderKeyValueTableHtml(obj, title = null) {
   const keys = Object.keys(obj || {});
   if (!obj || keys.length === 0) return "<p>Ingen data.</p>";
