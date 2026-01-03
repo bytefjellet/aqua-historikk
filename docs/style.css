@@ -26,7 +26,6 @@ code { background: #f5f5f5; padding: 2px 6px; border-radius: 6px; }
 table { border-collapse: collapse; width: 100%; margin-top: 10px; }
 th, td { border: 1px solid #eee; padding: 8px; text-align: left; vertical-align: top; }
 
-/* Overskriftsrad */
 th {
   font-family: inherit;
   font-size: 0.85rem;
@@ -37,7 +36,7 @@ th {
   color: #ffffff;
 }
 
-/* Zebra KUN for detaljer */
+/* Zebra KUN for "detalj-områder" (både key/value og innehaver-detaljlisten) */
 .details-area table.zebra tbody tr:nth-child(even) {
   background: #eff3f9;
 }
