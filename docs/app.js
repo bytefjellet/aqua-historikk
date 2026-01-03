@@ -282,10 +282,12 @@ function getPermitStatusForHolder(holderId, permitId) {
   return "Ukjent";
 }
 
-// -------------------- Build holder details table --------------------
+// -------------------- Build holder details table (NOW WITH zebra wrapper) --------------------
 function renderHolderDetailsTable(containerId, holderId, permitIds) {
+  const el = document.getElementById(containerId);
+
   if (!permitIds || permitIds.length === 0) {
-    document.getElementById(containerId).innerHTML = "<p>Ingen tillatelser å vise.</p>";
+    el.innerHTML = "<p>Ingen tillatelser å vise.</p>";
     return;
   }
 
@@ -336,7 +338,18 @@ function renderHolderDetailsTable(containerId, holderId, permitIds) {
     return String(a[1]).localeCompare(String(b[1]), "no");
   });
 
-  renderTable(containerId, columns, rows);
+  // Render with details-area + zebra class (so zebra applies ONLY here)
+  let html = `<div class="details-area">`;
+  html += `<table class="zebra"><thead><tr>`;
+  for (const c of columns) html += `<th>${escapeHtml(String(c).toUpperCase())}</th>`;
+  html += `</tr></thead><tbody>`;
+  for (const r of rows) {
+    html += `<tr>`;
+    for (const cell of r) html += `<td>${cell == null ? "" : escapeHtml(String(cell))}</td>`;
+    html += `</tr>`;
+  }
+  html += `</tbody></table></div>`;
+  el.innerHTML = html;
 }
 
 // -------------------- View: Innehaver i dag --------------------
@@ -457,7 +470,7 @@ document.getElementById("holderHistDetailsBtn").addEventListener("click", () => 
   renderHolderDetailsTable("holderHistDetails", holderId, holderHistPermitIds);
 });
 
-// -------------------- Permit views --------------------
+// -------------------- Permit views (key/value details) --------------------
 function renderKeyValueTableHtml(obj, title = null) {
   const keys = Object.keys(obj || {});
   if (!obj || keys.length === 0) return "<p>Ingen data.</p>";
@@ -472,8 +485,7 @@ function renderKeyValueTableHtml(obj, title = null) {
     const val = o[key];
     html += `<tr><td><code>${escapeHtml(key)}</code></td><td>${val == null ? "" : escapeHtml(String(val))}</td></tr>`;
   }
-  html += "</tbody></table>";
-  html += `</div>`;
+  html += "</tbody></table></div>";
   return html;
 }
 
