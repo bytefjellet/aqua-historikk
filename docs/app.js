@@ -272,4 +272,324 @@ document.getElementById("holderNowBtn").addEventListener("click", () => {
 
   // Hent aktive permits (respekterer aktivt UI-filter for selve “visningen”)
   const fc = filterConditionSql("permit_id");
-  const q
+  const q = `
+    SELECT DISTINCT permit_id
+    FROM ownership_intervals
+    WHERE holder_id = $h AND valid_to IS NULL
+      AND ${fc.sql}
+    ORDER BY permit_id
+  `;
+  const rows = runQuery(q, { $h: holderId, ...fc.params });
+  holderNowPermitIds = rows.map(r => r[0]);
+
+  if (holderNowPermitIds.length === 0) {
+    document.getElementById("holderNowSummary").innerHTML =
+      activeFilter
+        ? `<p>Ingen aktive tillatelser funnet for denne innehaveren innen filteret “${escapeHtml(activeFilter)}”.</p>`
+        : "<p>Ingen aktive tillatelser funnet for denne innehaveren.</p>";
+    document.getElementById("holderNowDetails").innerHTML = "";
+    document.getElementById("holderNowDetailsBtn").disabled = true;
+    return;
+  }
+
+  // Selskapsnavn (fra snapshot)
+  let navn = "";
+  const anyRowJson = getLatestSnapshotRowJsonForHolder(holderId);
+  if (anyRowJson) {
+    const obj = JSON.parse(anyRowJson);
+    navn = tryExtract(obj, "NAVN");
+  }
+
+  // Antall totalt i denne visningen (etter aktivt UI-filter)
+  const totalCount = holderNowPermitIds.length;
+
+  // Antall grunnrente (alltid beregnet mot tag-tabellen, for permits i resultatsettet)
+  const grunnrenteCount = countGrunnrenteForPermits(holderNowPermitIds);
+
+  // Oppsummering (vertikalt)
+  renderKeyValue("holderNowSummary", {
+    "ORG.NR/PERS.NR": holderId,
+    "Selskapsnavn": navn || "(mangler)",
+    "Antall tillatelser (totalt)": totalCount,
+    "Antall tillatelser (Grunnrenteskatteplikt)": grunnrenteCount
+  });
+
+  document.getElementById("holderNowDetails").innerHTML = "";
+  document.getElementById("holderNowDetailsBtn").disabled = false;
+});
+
+document.getElementById("holderNowDetailsBtn").addEventListener("click", () => {
+  const holderId = document.getElementById("holderNowInput").value.trim();
+  if (!holderId) { clearHolderNowUI(); return; }
+  renderHolderDetailsTable("holderNowDetails", holderId, holderNowPermitIds);
+});
+
+// -------------------- View: Innehaver historikk --------------------
+document.getElementById("holderHistBtn").addEventListener("click", () => {
+  const holderId = document.getElementById("holderHistInput").value.trim();
+  if (!holderId) { clearHolderHistUI(); return; }
+
+  // Unike permits gjennom hele historikken (respekterer aktivt UI-filter for visningen)
+  const fc = filterConditionSql("permit_id");
+  const q = `
+    SELECT DISTINCT permit_id
+    FROM ownership_intervals
+    WHERE holder_id = $h
+      AND ${fc.sql}
+    ORDER BY permit_id
+  `;
+  const rows = runQuery(q, { $h: holderId, ...fc.params });
+  holderHistPermitIds = rows.map(r => r[0]);
+
+  if (holderHistPermitIds.length === 0) {
+    document.getElementById("holderHistSummary").innerHTML =
+      activeFilter
+        ? `<p>Ingen historikk funnet for denne innehaveren innen filteret “${escapeHtml(activeFilter)}”.</p>`
+        : "<p>Ingen historikk funnet for denne innehaveren.</p>";
+    document.getElementById("holderHistDetails").innerHTML = "";
+    document.getElementById("holderHistDetailsBtn").disabled = true;
+    return;
+  }
+
+  // Selskapsnavn (fra snapshot)
+  let navn = "";
+  const anyRowJson = getLatestSnapshotRowJsonForHolder(holderId);
+  if (anyRowJson) {
+    const obj = JSON.parse(anyRowJson);
+    navn = tryExtract(obj, "NAVN");
+  }
+
+  const totalCount = holderHistPermitIds.length;
+  const grunnrenteCount = countGrunnrenteForPermits(holderHistPermitIds);
+
+  renderKeyValue("holderHistSummary", {
+    "ORG.NR/PERS.NR": holderId,
+    "Selskapsnavn": navn || "(mangler)",
+    "Antall tillatelser (totalt)": totalCount,
+    "Antall tillatelser (Grunnrenteskatteplikt)": grunnrenteCount
+  });
+
+  document.getElementById("holderHistDetails").innerHTML = "";
+  document.getElementById("holderHistDetailsBtn").disabled = false;
+});
+
+document.getElementById("holderHistDetailsBtn").addEventListener("click", () => {
+  const holderId = document.getElementById("holderHistInput").value.trim();
+  if (!holderId) { clearHolderHistUI(); return; }
+  renderHolderDetailsTable("holderHistDetails", holderId, holderHistPermitIds);
+});
+
+// -------------------- Permit views (som før: kort + detaljer) --------------------
+function renderKeyValueTableHtml(obj, title = null) {
+  const keys = Object.keys(obj || {});
+  if (!obj || keys.length === 0) return "<p>Ingen data.</p>";
+  let html = "";
+  if (title) html += `<h4>${escapeHtml(title)}</h4>`;
+  html += "<table><thead><tr><th>Felt</th><th>Verdi</th></tr></thead><tbody>";
+  for (const key of keys.sort()) {
+    const val = obj[key];
+    html += `<tr><td><code>${escapeHtml(key)}</code></td><td>${val == null ? "" : escapeHtml(String(val))}</td></tr>`;
+  }
+  html += "</tbody></table>";
+  return html;
+}
+function renderVerticalCards(containerId, cardsHtml) {
+  const el = document.getElementById(containerId);
+  if (!cardsHtml || cardsHtml.length === 0) { el.innerHTML = "<p>Ingen treff.</p>"; return; }
+  el.innerHTML = cardsHtml.join("\n<hr />\n");
+}
+function getSnapshotRowJson(permitId, holderId = null, preferDate = null) {
+  if (preferDate) {
+    const q1 = holderId
+      ? `SELECT row_json FROM permit_snapshot WHERE snapshot_date=$d AND permit_id=$p AND holder_id=$h LIMIT 1`
+      : `SELECT row_json FROM permit_snapshot WHERE snapshot_date=$d AND permit_id=$p LIMIT 1`;
+    const r1 = runQuery(q1, holderId ? { $d: preferDate, $p: permitId, $h: holderId } : { $d: preferDate, $p: permitId });
+    if (r1.length) return r1[0][0];
+  }
+  const q2 = holderId
+    ? `SELECT row_json FROM permit_snapshot WHERE permit_id=$p AND holder_id=$h ORDER BY snapshot_date DESC LIMIT 1`
+    : `SELECT row_json FROM permit_snapshot WHERE permit_id=$p ORDER BY snapshot_date DESC LIMIT 1`;
+  const r2 = runQuery(q2, holderId ? { $p: permitId, $h: holderId } : { $p: permitId });
+  return r2.length ? r2[0][0] : null;
+}
+function cardFromSummary(summaryObj, permitId, holderId, preferDate, detailsTargetId, heading) {
+  const detailsBtn = `
+    <button class="details-btn"
+      data-target="${escapeHtml(detailsTargetId)}"
+      data-permit="${escapeHtml(permitId)}"
+      data-holder="${escapeHtml(holderId || "")}"
+      data-date="${escapeHtml(preferDate || "")}">
+      Detaljer
+    </button>
+  `;
+  const title = heading ? `<h4>${escapeHtml(heading)}</h4>` : "";
+  const kv = renderKeyValueTableHtml(summaryObj);
+  return `${title}<div class="row">${detailsBtn}</div>${kv}`;
+}
+function permitIsInActiveFilter(permitId) {
+  if (!activeFilter) return true;
+  const q = `
+    SELECT 1
+    FROM permit_tags
+    WHERE snapshot_date = $d AND tag = $t AND permit_id = $p
+    LIMIT 1
+  `;
+  const rows = runQuery(q, { $d: latestMeta.snapshot_date, $t: activeFilter, $p: permitId });
+  return rows.length > 0;
+}
+
+// Permit -> owner (NOW)
+document.getElementById("permitNowBtn").addEventListener("click", () => {
+  const permitId = document.getElementById("permitNowInput").value.trim();
+  if (!permitId) { clearPermitNowUI(); return; }
+
+  if (activeFilter && !permitIsInActiveFilter(permitId)) {
+    document.getElementById("permitNowResult").innerHTML =
+      `<p>Tillatelsen <code>${escapeHtml(permitId)}</code> er ikke innen filteret “${escapeHtml(activeFilter)}”.</p>`;
+    document.getElementById("permitNowDetails").innerHTML = "";
+    return;
+  }
+
+  const rowJson = getSnapshotRowJson(permitId, null, latestMeta.snapshot_date);
+  if (!rowJson) {
+    document.getElementById("permitNowResult").innerHTML = "<p>Fant ingen tillatelse med dette nummeret i snapshot-tabellen.</p>";
+    document.getElementById("permitNowDetails").innerHTML = "";
+    return;
+  }
+  const obj = JSON.parse(rowJson);
+
+  const qOwner = `
+    SELECT holder_id, valid_from
+    FROM ownership_intervals
+    WHERE permit_id=$p AND valid_to IS NULL
+    ORDER BY valid_from DESC
+    LIMIT 1
+  `;
+  const own = runQuery(qOwner, { $p: permitId });
+  const eier = own.length ? own[0][0] : "";
+  const eierFra = own.length ? own[0][1] : "";
+
+  const summary = {
+    "TILL_NR": permitId,
+    "NAVN": tryExtract(obj, "NAVN") || "(mangler)",
+    "Snapshot": latestMeta.snapshot_date,
+    "Eier (fra historikk-tabell)": eier ? `${eier} (fra ${eierFra})` : "(ikke funnet)"
+  };
+
+  renderVerticalCards("permitNowResult", [
+    cardFromSummary(summary, permitId, eier || "", latestMeta.snapshot_date, "permitNowDetails", `Tillatelse ${permitId}`)
+  ]);
+  document.getElementById("permitNowDetails").innerHTML = "";
+});
+
+// Permit -> owners (HISTORY)
+document.getElementById("permitHistBtn").addEventListener("click", () => {
+  const permitId = document.getElementById("permitHistInput").value.trim();
+  if (!permitId) { clearPermitHistUI(); return; }
+
+  if (activeFilter && !permitIsInActiveFilter(permitId)) {
+    document.getElementById("permitHistResult").innerHTML =
+      `<p>Tillatelsen <code>${escapeHtml(permitId)}</code> er ikke innen filteret “${escapeHtml(activeFilter)}”.</p>`;
+    document.getElementById("permitHistDetails").innerHTML = "";
+    return;
+  }
+
+  const q = `
+    SELECT holder_id, valid_from, COALESCE(valid_to, 'NÅ') AS valid_to
+    FROM ownership_intervals
+    WHERE permit_id=$p
+    ORDER BY valid_from
+  `;
+  const rows = runQuery(q, { $p: permitId });
+
+  if (!rows.length) {
+    document.getElementById("permitHistResult").innerHTML = "<p>Ingen historikk funnet for denne tillatelsen.</p>";
+    document.getElementById("permitHistDetails").innerHTML = "";
+    return;
+  }
+
+  const cards = rows.map(([holderId, from, to]) => {
+    const rowJson = getSnapshotRowJson(permitId, holderId, from);
+    let navn = "";
+    if (rowJson) {
+      const obj = JSON.parse(rowJson);
+      navn = tryExtract(obj, "NAVN");
+    }
+    const summary = {
+      "TILL_NR": permitId,
+      "ORG.NR/PERS.NR": holderId,
+      "NAVN": navn || "(mangler)",
+      "Fra": from,
+      "Til": to
+    };
+    return cardFromSummary(summary, permitId, holderId, from, "permitHistDetails", `Eierperiode ${from} → ${to}`);
+  });
+
+  renderVerticalCards("permitHistResult", cards);
+  document.getElementById("permitHistDetails").innerHTML = "";
+});
+
+// Global Detaljer-knapper
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".details-btn");
+  if (!btn) return;
+
+  const targetId = btn.getAttribute("data-target");
+  const permitId = btn.getAttribute("data-permit");
+  const holderId = (btn.getAttribute("data-holder") || "").trim() || null;
+  const date = (btn.getAttribute("data-date") || "").trim() || null;
+
+  const rowJson = getSnapshotRowJson(permitId, holderId, date);
+  if (!rowJson) {
+    document.getElementById(targetId).innerHTML = "<p>Fant ingen snapshot-rad for denne kombinasjonen.</p>";
+    return;
+  }
+  renderDetails(targetId, JSON.parse(rowJson), `Detaljer for ${permitId}`);
+});
+
+function renderDetails(containerId, obj, title = null) {
+  document.getElementById(containerId).innerHTML = renderKeyValueTableHtml(obj, title);
+}
+
+// -------------------- Filter buttons --------------------
+document.getElementById("filterAllBtn").addEventListener("click", () => {
+  activeFilter = null;
+  setActiveFilterUi();
+  clearAllSearchUi();
+});
+
+document.getElementById("filterGrunnrenteBtn").addEventListener("click", () => {
+  activeFilter = "Grunnrenteskatteplikt";
+  setActiveFilterUi();
+  clearAllSearchUi();
+});
+
+// -------------------- Clear-on-empty + Enter-to-search --------------------
+function wireInputClearAndEnter(inputId, onEnterClickId, clearFn) {
+  const input = document.getElementById(inputId);
+  input.addEventListener("input", (e) => {
+    if (e.target.value.trim() === "") clearFn();
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") document.getElementById(onEnterClickId).click();
+  });
+}
+
+wireInputClearAndEnter("holderNowInput", "holderNowBtn", clearHolderNowUI);
+wireInputClearAndEnter("holderHistInput", "holderHistBtn", clearHolderHistUI);
+wireInputClearAndEnter("permitNowInput", "permitNowBtn", clearPermitNowUI);
+wireInputClearAndEnter("permitHistInput", "permitHistBtn", clearPermitHistUI);
+
+// -------------------- Start --------------------
+(async function main() {
+  try {
+    latestMeta = await loadLatestJson();
+    const sqlJs = await loadSqlJs();
+    await downloadAndOpenDb(sqlJs);
+
+    setActiveFilterUi();
+  } catch (e) {
+    console.error(e);
+    setStatus("Feil: " + e.message);
+  }
+})();
