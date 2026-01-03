@@ -1,4 +1,4 @@
 {
   "snapshot_date": "2026-01-03",
-  ".latest.sqlite_gz": "https://github.com/bytefjellet/aqua-historikk/releases/download/latest/latest.sqlite.gz"
+  "sqlite_gz_url": "./latest.sqlite.gz"
 }
