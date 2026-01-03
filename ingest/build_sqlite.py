@@ -109,8 +109,13 @@ def build_today_map(clean_csv_path: str, snapshot_date: str, rules: list):
     today_owner_by_permit = {}
     snapshots = []
     with open(clean_csv_path, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        cols = reader.fieldnames or []
+    sample = f.read(8192)
+    f.seek(0)
+    delim = detect_delimiter(sample)
+
+    reader = csv.DictReader(f, delimiter=delim)
+    cols = reader.fieldnames or []
+
         if PERMIT_COL not in cols or HOLDER_COL not in cols:
             raise RuntimeError(f"Mangler kolonner. Fant: {cols}. Må ha '{PERMIT_COL}' og '{HOLDER_COL}'.")
 
