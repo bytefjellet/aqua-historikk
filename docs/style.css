@@ -37,12 +37,11 @@ th {
   color: #ffffff;
 }
 
-/* Zebra kun på detalj-tabeller (key/value) */
-.details-kv tbody tr:nth-child(even) {
+/* Zebra KUN for detaljer */
+.details-area table.zebra tbody tr:nth-child(even) {
   background: #eff3f9;
 }
 
-/* Mer luft mellom oppsummering og detaljer i innehaver-visningene */
 #holderNowDetails, #holderHistDetails {
   margin-top: 22px;
 }
@@ -54,7 +53,6 @@ h4 { margin: 10px 0 6px; }
 
 hr { border: none; border-top: 1px solid #eee; margin: 14px 0; }
 
-/* Filterknapper */
 .filter-btn.active {
   border-color: #000;
   font-weight: 600;
