@@ -3,16 +3,16 @@
 ========================= */
 :root{
   --blue: #2c436b;
+  --blue-active: #4b6fb3;
+
   --table-head: #2c436b;
-
-  --filter-inactive: #e7b78a;
-  --filter-active: #f0d2b6;
-
   --zebra: #eff3f9;
 
   --text: #111;
   --muted: #555;
   --border: #e9e9e9;
+
+  --content-max: 1100px;
 }
 
 body {
@@ -22,14 +22,29 @@ body {
   color: var(--text);
 }
 
+/* =========================
+   Header aligned with main
+   (samme innrykk/bredde)
+========================= */
 header {
   padding: 16px;
   border-bottom: 1px solid #ddd;
 }
 
+/* Sentrer alle direkte barn i header til samme bredde som main */
+header > * {
+  max-width: var(--content-max);
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+/* =========================
+   Main
+========================= */
 main {
   padding: 16px;
-  max-width: 1100px;
+  max-width: var(--content-max);
   margin: 0 auto;
 }
 
@@ -50,7 +65,7 @@ main {
   background: var(--blue);
   color: #fff;
   cursor: pointer;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: 0.03em;
 }
 
@@ -59,9 +74,8 @@ main {
 }
 
 .tab.active {
-  /* litt lysere for å markere aktiv fane */
-  background: #4b6fb3;
-  border-color: #4b6fb3;
+  background: var(--blue-active);
+  border-color: var(--blue-active);
 }
 
 /* =========================
@@ -92,7 +106,7 @@ main {
 label {
   display: block;
   margin: 10px 0 6px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 input {
@@ -124,31 +138,37 @@ button:disabled {
 
 /* =========================
    Filterknapper (header)
-   Aktiv: #f0d2b6
-   Inaktiv: #e7b78a (nedtonet)
+   - Pill-aktige
+   - Samme blå profil som faner
+   - Aktiv = litt lysere (som aktiv fane)
 ========================= */
 .filter-btn {
-  border: 1px solid #d7a56f;
-  background: var(--filter-inactive);
-  color: var(--blue);
+  border: 1px solid var(--blue);
+  background: var(--blue);
+  color: #fff;
   font-weight: 800;
 
-  /* "mindre tyngde" for inaktive */
-  opacity: 0.85;
+  /* pill-look */
+  border-radius: 999px;
+  padding: 10px 16px;
+
+  /* “mindre tyngde” når inaktiv */
+  opacity: 0.82;
   box-shadow: none;
+
+  transition: opacity 120ms ease, filter 120ms ease, background 120ms ease, border-color 120ms ease;
 }
 
 .filter-btn:hover {
-  opacity: 0.95;
+  opacity: 0.92;
+  filter: brightness(1.06);
 }
 
 .filter-btn.active {
-  background: var(--filter-active);
-  border-color: var(--filter-active);
-
-  /* mer tyngde for aktiv */
+  background: var(--blue-active);
+  border-color: var(--blue-active);
   opacity: 1;
-  box-shadow: 0 1px 0 rgba(0,0,0,0.06);
+  box-shadow: 0 1px 0 rgba(0,0,0,0.08);
 }
 
 /* =========================
@@ -182,7 +202,6 @@ h1, h2, h3, h4 {
   margin: 0 0 10px;
 }
 
-h2 { margin-top: 0; }
 h3 { margin-top: 18px; }
 h4 { margin: 10px 0 6px; }
 
@@ -233,7 +252,6 @@ th {
   margin-top: 22px;
 }
 
-/* Resultat-tabeller litt luft */
 .result table {
   margin-top: 12px;
 }
