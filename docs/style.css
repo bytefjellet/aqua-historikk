@@ -280,3 +280,28 @@ th {
   color: var(--muted);
   font-size: 0.95rem;
 }
+
+/* =========================
+   Brødsmulesti
+========================= */
+.breadcrumb {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 4px 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.breadcrumb .crumb {
+  white-space: nowrap;
+}
+
+.breadcrumb .separator {
+  color: #999;
+}
+
+.breadcrumb .current {
+  color: var(--blue);
+  font-weight: 600;
+}
