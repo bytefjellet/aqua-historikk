@@ -54,21 +54,21 @@ jobs:
           gh release upload latest "${{ steps.fetch.outputs.raw_gz }}" --clobber
           gh release upload latest work/latest.sqlite.gz --clobber
 
-      - name: Update site/latest.json
+      - name: Update docs/latest.json
         run: |
-          cat > site/latest.json <<'JSON'
+          cat > docs/latest.json <<'JSON'
           {
             "snapshot_date": "${{ steps.fetch.outputs.snapshot_date }}",
             "sqlite_gz_url": "https://github.com/${{ github.repository }}/releases/download/latest/latest.sqlite.gz"
           }
           JSON
-          cat site/latest.json
-
+          cat docs/latest.json
+          
       - name: Commit latest.json (for GitHub Pages)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add site/latest.json
+          git add docs/latest.json
           git diff --cached --quiet && echo "Ingen endringer i latest.json" && exit 0
           git commit -m "Update latest.json (${{ steps.fetch.outputs.snapshot_date }})"
           git push
