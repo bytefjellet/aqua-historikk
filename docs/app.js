@@ -4,7 +4,7 @@ let latestMeta = null;
 // Aktivt filter: null = alle, ellers tag-navn (f.eks. "Grunnrenteskatteplikt")
 let activeFilter = null;
 
-// Holder siste søkeresultat (permitId-lister) så “Vis detaljer” kan bruke dem
+// Holder siste søkeresultat (permitId-lister) så “Vis detaljer” kan bruke dem (disse følger aktivt filter)
 let holderNowPermitIds = [];
 let holderHistPermitIds = [];
 
@@ -162,7 +162,6 @@ function filterConditionSql(permitColumnName = "permit_id") {
 function countGrunnrenteForPermits(permitIds) {
   if (!permitIds || permitIds.length === 0) return 0;
 
-  // Bygg IN-liste trygt (permitId kan inneholde mellomrom)
   const inList = permitIds.map(p => `'${String(p).replaceAll("'", "''")}'`).join(",");
   const q = `
     SELECT COUNT(DISTINCT permit_id)
@@ -173,6 +172,18 @@ function countGrunnrenteForPermits(permitIds) {
   `;
   const rows = runQuery(q, { $d: latestMeta.snapshot_date });
   return rows.length ? Number(rows[0][0]) : 0;
+}
+
+function permitIsInActiveFilter(permitId) {
+  if (!activeFilter) return true;
+  const q = `
+    SELECT 1
+    FROM permit_tags
+    WHERE snapshot_date = $d AND tag = $t AND permit_id = $p
+    LIMIT 1
+  `;
+  const rows = runQuery(q, { $d: latestMeta.snapshot_date, $t: activeFilter, $p: permitId });
+  return rows.length > 0;
 }
 
 // -------------------- Snapshot helpers --------------------
@@ -210,9 +221,50 @@ function getLatestSnapshotRowJsonForPermitHolder(permitId, holderId) {
   return r2.length ? r2[0][0] : null;
 }
 
+function getSnapshotRowJson(permitId, holderId = null, preferDate = null) {
+  if (preferDate) {
+    const q1 = holderId
+      ? `SELECT row_json FROM permit_snapshot WHERE snapshot_date=$d AND permit_id=$p AND holder_id=$h LIMIT 1`
+      : `SELECT row_json FROM permit_snapshot WHERE snapshot_date=$d AND permit_id=$p LIMIT 1`;
+    const r1 = runQuery(q1, holderId ? { $d: preferDate, $p: permitId, $h: holderId } : { $d: preferDate, $p: permitId });
+    if (r1.length) return r1[0][0];
+  }
+  const q2 = holderId
+    ? `SELECT row_json FROM permit_snapshot WHERE permit_id=$p AND holder_id=$h ORDER BY snapshot_date DESC LIMIT 1`
+    : `SELECT row_json FROM permit_snapshot WHERE permit_id=$p ORDER BY snapshot_date DESC LIMIT 1`;
+  const r2 = runQuery(q2, holderId ? { $p: permitId, $h: holderId } : { $p: permitId });
+  return r2.length ? r2[0][0] : null;
+}
+
 function tryExtract(obj, key) {
   const v = obj ? obj[key] : null;
   return v == null ? "" : String(v).trim();
+}
+
+// -------------------- STATUS helper --------------------
+function getPermitStatusForHolder(holderId, permitId) {
+  // Aktiv hvis finnes en rad med valid_to NULL
+  const qActive = `
+    SELECT 1
+    FROM ownership_intervals
+    WHERE holder_id = $h AND permit_id = $p AND valid_to IS NULL
+    LIMIT 1
+  `;
+  const a = runQuery(qActive, { $h: holderId, $p: permitId });
+  if (a.length > 0) return "Aktiv";
+
+  // Ellers: finn seneste valid_to for denne innehaveren på denne tillatelsen
+  const qEnded = `
+    SELECT valid_to
+    FROM ownership_intervals
+    WHERE holder_id = $h AND permit_id = $p AND valid_to IS NOT NULL
+    ORDER BY valid_to DESC
+    LIMIT 1
+  `;
+  const e = runQuery(qEnded, { $h: holderId, $p: permitId });
+  if (e.length > 0 && e[0][0]) return `Avsluttet (til ${e[0][0]})`;
+
+  return "Ukjent";
 }
 
 // -------------------- Build holder details table --------------------
@@ -223,6 +275,7 @@ function renderHolderDetailsTable(containerId, holderId, permitIds) {
   }
 
   const columns = [
+    "STATUS",
     "TILL_NR",
     "ART",
     "FORMÅL",
@@ -235,7 +288,15 @@ function renderHolderDetailsTable(containerId, holderId, permitIds) {
   const rows = [];
   for (const permitId of permitIds) {
     const rowJson = getLatestSnapshotRowJsonForPermitHolder(permitId, holderId);
-    if (!rowJson) continue;
+    // Hvis vi ikke finner snapshot-rad for permit+holder (kan skje hvis historikken ligger før første snapshot),
+    // så kan vi fortsatt vise en rad med minst permitId + status.
+    if (!rowJson) {
+      rows.push([
+        getPermitStatusForHolder(holderId, permitId),
+        permitId, "", "", "", "", "", ""
+      ]);
+      continue;
+    }
 
     const obj = JSON.parse(rowJson);
 
@@ -249,6 +310,7 @@ function renderHolderDetailsTable(containerId, holderId, permitIds) {
     const prodOmr = tryExtract(obj, "PROD_OMR");
 
     rows.push([
+      getPermitStatusForHolder(holderId, permitId),
       permitId,
       art,
       formaal,
@@ -259,8 +321,14 @@ function renderHolderDetailsTable(containerId, holderId, permitIds) {
     ]);
   }
 
-  // Sorter på TILL_NR for stabil visning
-  rows.sort((a, b) => String(a[0]).localeCompare(String(b[0]), "no"));
+  // Sortering: aktive først, så permit-id
+  const statusRank = (s) => (String(s).startsWith("Aktiv") ? 0 : 1);
+  rows.sort((a, b) => {
+    const ra = statusRank(a[0]);
+    const rb = statusRank(b[0]);
+    if (ra !== rb) return ra - rb;
+    return String(a[1]).localeCompare(String(b[1]), "no");
+  });
 
   renderTable(containerId, columns, rows);
 }
@@ -270,23 +338,30 @@ document.getElementById("holderNowBtn").addEventListener("click", () => {
   const holderId = document.getElementById("holderNowInput").value.trim();
   if (!holderId) { clearHolderNowUI(); return; }
 
-  // Hent aktive permits (respekterer aktivt UI-filter for selve “visningen”)
+  // 1) Total (uten filter): aktive permits
+  const qAll = `
+    SELECT DISTINCT permit_id
+    FROM ownership_intervals
+    WHERE holder_id = $h AND valid_to IS NULL
+    ORDER BY permit_id
+  `;
+  const allRows = runQuery(qAll, { $h: holderId });
+  const allPermitIds = allRows.map(r => r[0]);
+
+  // 2) Visning (med aktivt filter): aktive permits
   const fc = filterConditionSql("permit_id");
-  const q = `
+  const qView = `
     SELECT DISTINCT permit_id
     FROM ownership_intervals
     WHERE holder_id = $h AND valid_to IS NULL
       AND ${fc.sql}
     ORDER BY permit_id
   `;
-  const rows = runQuery(q, { $h: holderId, ...fc.params });
-  holderNowPermitIds = rows.map(r => r[0]);
+  const viewRows = runQuery(qView, { $h: holderId, ...fc.params });
+  holderNowPermitIds = viewRows.map(r => r[0]);
 
-  if (holderNowPermitIds.length === 0) {
-    document.getElementById("holderNowSummary").innerHTML =
-      activeFilter
-        ? `<p>Ingen aktive tillatelser funnet for denne innehaveren innen filteret “${escapeHtml(activeFilter)}”.</p>`
-        : "<p>Ingen aktive tillatelser funnet for denne innehaveren.</p>";
+  if (allPermitIds.length === 0) {
+    document.getElementById("holderNowSummary").innerHTML = "<p>Ingen aktive tillatelser funnet for denne innehaveren.</p>";
     document.getElementById("holderNowDetails").innerHTML = "";
     document.getElementById("holderNowDetailsBtn").disabled = true;
     return;
@@ -300,22 +375,23 @@ document.getElementById("holderNowBtn").addEventListener("click", () => {
     navn = tryExtract(obj, "NAVN");
   }
 
-  // Antall totalt i denne visningen (etter aktivt UI-filter)
-  const totalCount = holderNowPermitIds.length;
+  const totalCount = allPermitIds.length;                      // alltid hele databasen
+  const grunnrenteCount = countGrunnrenteForPermits(allPermitIds);
+  const viewCount = holderNowPermitIds.length;
 
-  // Antall grunnrente (alltid beregnet mot tag-tabellen, for permits i resultatsettet)
-  const grunnrenteCount = countGrunnrenteForPermits(holderNowPermitIds);
-
-  // Oppsummering (vertikalt)
-  renderKeyValue("holderNowSummary", {
+  const summaryObj = {
     "ORG.NR/PERS.NR": holderId,
     "Selskapsnavn": navn || "(mangler)",
     "Antall tillatelser (totalt)": totalCount,
     "Antall tillatelser (Grunnrenteskatteplikt)": grunnrenteCount
-  });
+  };
+  if (activeFilter) summaryObj["Antall i visning (aktivt filter)"] = viewCount;
+
+  renderKeyValue("holderNowSummary", summaryObj);
 
   document.getElementById("holderNowDetails").innerHTML = "";
-  document.getElementById("holderNowDetailsBtn").disabled = false;
+  // Vis detaljer-knapp er aktiv så lenge det finnes noe å vise i visning (kan være 0 hvis filteret er veldig stramt)
+  document.getElementById("holderNowDetailsBtn").disabled = (activeFilter && viewCount === 0);
 });
 
 document.getElementById("holderNowDetailsBtn").addEventListener("click", () => {
@@ -329,23 +405,30 @@ document.getElementById("holderHistBtn").addEventListener("click", () => {
   const holderId = document.getElementById("holderHistInput").value.trim();
   if (!holderId) { clearHolderHistUI(); return; }
 
-  // Unike permits gjennom hele historikken (respekterer aktivt UI-filter for visningen)
+  // 1) Total (uten filter): unike permits over tid
+  const qAll = `
+    SELECT DISTINCT permit_id
+    FROM ownership_intervals
+    WHERE holder_id = $h
+    ORDER BY permit_id
+  `;
+  const allRows = runQuery(qAll, { $h: holderId });
+  const allPermitIds = allRows.map(r => r[0]);
+
+  // 2) Visning (med aktivt filter): unike permits over tid
   const fc = filterConditionSql("permit_id");
-  const q = `
+  const qView = `
     SELECT DISTINCT permit_id
     FROM ownership_intervals
     WHERE holder_id = $h
       AND ${fc.sql}
     ORDER BY permit_id
   `;
-  const rows = runQuery(q, { $h: holderId, ...fc.params });
-  holderHistPermitIds = rows.map(r => r[0]);
+  const viewRows = runQuery(qView, { $h: holderId, ...fc.params });
+  holderHistPermitIds = viewRows.map(r => r[0]);
 
-  if (holderHistPermitIds.length === 0) {
-    document.getElementById("holderHistSummary").innerHTML =
-      activeFilter
-        ? `<p>Ingen historikk funnet for denne innehaveren innen filteret “${escapeHtml(activeFilter)}”.</p>`
-        : "<p>Ingen historikk funnet for denne innehaveren.</p>";
+  if (allPermitIds.length === 0) {
+    document.getElementById("holderHistSummary").innerHTML = "<p>Ingen historikk funnet for denne innehaveren.</p>";
     document.getElementById("holderHistDetails").innerHTML = "";
     document.getElementById("holderHistDetailsBtn").disabled = true;
     return;
@@ -359,18 +442,22 @@ document.getElementById("holderHistBtn").addEventListener("click", () => {
     navn = tryExtract(obj, "NAVN");
   }
 
-  const totalCount = holderHistPermitIds.length;
-  const grunnrenteCount = countGrunnrenteForPermits(holderHistPermitIds);
+  const totalCount = allPermitIds.length;                      // alltid hele databasen
+  const grunnrenteCount = countGrunnrenteForPermits(allPermitIds);
+  const viewCount = holderHistPermitIds.length;
 
-  renderKeyValue("holderHistSummary", {
+  const summaryObj = {
     "ORG.NR/PERS.NR": holderId,
     "Selskapsnavn": navn || "(mangler)",
     "Antall tillatelser (totalt)": totalCount,
     "Antall tillatelser (Grunnrenteskatteplikt)": grunnrenteCount
-  });
+  };
+  if (activeFilter) summaryObj["Antall i visning (aktivt filter)"] = viewCount;
+
+  renderKeyValue("holderHistSummary", summaryObj);
 
   document.getElementById("holderHistDetails").innerHTML = "";
-  document.getElementById("holderHistDetailsBtn").disabled = false;
+  document.getElementById("holderHistDetailsBtn").disabled = (activeFilter && viewCount === 0);
 });
 
 document.getElementById("holderHistDetailsBtn").addEventListener("click", () => {
@@ -398,20 +485,6 @@ function renderVerticalCards(containerId, cardsHtml) {
   if (!cardsHtml || cardsHtml.length === 0) { el.innerHTML = "<p>Ingen treff.</p>"; return; }
   el.innerHTML = cardsHtml.join("\n<hr />\n");
 }
-function getSnapshotRowJson(permitId, holderId = null, preferDate = null) {
-  if (preferDate) {
-    const q1 = holderId
-      ? `SELECT row_json FROM permit_snapshot WHERE snapshot_date=$d AND permit_id=$p AND holder_id=$h LIMIT 1`
-      : `SELECT row_json FROM permit_snapshot WHERE snapshot_date=$d AND permit_id=$p LIMIT 1`;
-    const r1 = runQuery(q1, holderId ? { $d: preferDate, $p: permitId, $h: holderId } : { $d: preferDate, $p: permitId });
-    if (r1.length) return r1[0][0];
-  }
-  const q2 = holderId
-    ? `SELECT row_json FROM permit_snapshot WHERE permit_id=$p AND holder_id=$h ORDER BY snapshot_date DESC LIMIT 1`
-    : `SELECT row_json FROM permit_snapshot WHERE permit_id=$p ORDER BY snapshot_date DESC LIMIT 1`;
-  const r2 = runQuery(q2, holderId ? { $p: permitId, $h: holderId } : { $p: permitId });
-  return r2.length ? r2[0][0] : null;
-}
 function cardFromSummary(summaryObj, permitId, holderId, preferDate, detailsTargetId, heading) {
   const detailsBtn = `
     <button class="details-btn"
@@ -425,17 +498,6 @@ function cardFromSummary(summaryObj, permitId, holderId, preferDate, detailsTarg
   const title = heading ? `<h4>${escapeHtml(heading)}</h4>` : "";
   const kv = renderKeyValueTableHtml(summaryObj);
   return `${title}<div class="row">${detailsBtn}</div>${kv}`;
-}
-function permitIsInActiveFilter(permitId) {
-  if (!activeFilter) return true;
-  const q = `
-    SELECT 1
-    FROM permit_tags
-    WHERE snapshot_date = $d AND tag = $t AND permit_id = $p
-    LIMIT 1
-  `;
-  const rows = runQuery(q, { $d: latestMeta.snapshot_date, $t: activeFilter, $p: permitId });
-  return rows.length > 0;
 }
 
 // Permit -> owner (NOW)
@@ -544,12 +606,8 @@ document.addEventListener("click", (e) => {
     document.getElementById(targetId).innerHTML = "<p>Fant ingen snapshot-rad for denne kombinasjonen.</p>";
     return;
   }
-  renderDetails(targetId, JSON.parse(rowJson), `Detaljer for ${permitId}`);
+  document.getElementById(targetId).innerHTML = renderKeyValueTableHtml(JSON.parse(rowJson), `Detaljer for ${permitId}`);
 });
-
-function renderDetails(containerId, obj, title = null) {
-  document.getElementById(containerId).innerHTML = renderKeyValueTableHtml(obj, title);
-}
 
 // -------------------- Filter buttons --------------------
 document.getElementById("filterAllBtn").addEventListener("click", () => {
