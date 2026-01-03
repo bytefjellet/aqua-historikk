@@ -17,43 +17,6 @@ document.querySelectorAll(".tab").forEach(btn => {
   btn.addEventListener("click", () => switchTab(btn.dataset.tab));
 });
 
-function renderTable(containerId, columns, rows) {
-  const el = document.getElementById(containerId);
-  if (!rows || rows.length === 0) {
-    el.innerHTML = "<p>Ingen treff.</p>";
-    return;
-  }
-  let html = "<table><thead><tr>";
-  for (const c of columns) html += `<th>${escapeHtml(c)}</th>`;
-  html += "</tr></thead><tbody>";
-  for (const r of rows) {
-    html += "<tr>";
-    for (const cell of r) html += `<td>${cell === null ? "" : escapeHtml(String(cell))}</td>`;
-    html += "</tr>";
-  }
-  html += "</tbody></table>";
-  el.innerHTML = html;
-}
-
-function renderKeyValueTable(containerId, obj) {
-  const el = document.getElementById(containerId);
-  if (!obj || Object.keys(obj).length === 0) {
-    el.innerHTML = "<p>Ingen detaljer funnet.</p>";
-    return;
-  }
-
-  let html = "<table><thead><tr><th>Felt</th><th>Verdi</th></tr></thead><tbody>";
-  for (const key of Object.keys(obj).sort()) {
-    const val = obj[key];
-    html += `<tr>
-      <td><code>${escapeHtml(key)}</code></td>
-      <td>${val === null ? "" : escapeHtml(String(val))}</td>
-    </tr>`;
-  }
-  html += "</tbody></table>";
-  el.innerHTML = html;
-}
-
 function escapeHtml(s) {
   return s
     .replaceAll("&", "&amp;")
@@ -63,21 +26,43 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
+function renderKeyValueTableHtml(obj, title = null) {
+  const keys = Object.keys(obj || {});
+  if (!obj || keys.length === 0) {
+    return "<p>Ingen data.</p>";
+  }
+
+  let html = "";
+  if (title) html += `<h4>${escapeHtml(title)}</h4>`;
+  html += "<table><thead><tr><th>Felt</th><th>Verdi</th></tr></thead><tbody>";
+  for (const key of keys.sort()) {
+    const val = obj[key];
+    html += `<tr>
+      <td><code>${escapeHtml(key)}</code></td>
+      <td>${val === null ? "" : escapeHtml(String(val))}</td>
+    </tr>`;
+  }
+  html += "</tbody></table>";
+  return html;
+}
+
+function renderDetails(containerId, obj, title = null) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = renderKeyValueTableHtml(obj, title);
+}
+
 function clearHolderNowUI() {
   document.getElementById("holderNowResult").innerHTML = "";
   document.getElementById("holderNowDetails").innerHTML = "";
 }
-
 function clearHolderHistUI() {
   document.getElementById("holderHistResult").innerHTML = "";
   document.getElementById("holderHistDetails").innerHTML = "";
 }
-
 function clearPermitNowUI() {
   document.getElementById("permitNowResult").innerHTML = "";
   document.getElementById("permitNowDetails").innerHTML = "";
 }
-
 function clearPermitHistUI() {
   document.getElementById("permitHistResult").innerHTML = "";
   document.getElementById("permitHistDetails").innerHTML = "";
@@ -101,7 +86,6 @@ async function downloadAndOpenDb(sqlJs) {
   setStatus(`Laster database (${latestMeta.snapshot_date})…`);
   const r = await fetch(url, { cache: "no-store" });
   if (!r.ok) throw new Error(`Klarte ikke å laste DB: ${url} (HTTP ${r.status})`);
-
   const gzBuf = new Uint8Array(await r.arrayBuffer());
   const rawBuf = window.pako.ungzip(gzBuf);
   db = new sqlJs.Database(rawBuf);
@@ -115,8 +99,7 @@ function runQuery(sql, params = {}) {
     stmt.bind(params);
     const rows = [];
     while (stmt.step()) rows.push(stmt.get());
-    const cols = stmt.getColumnNames();
-    return { cols, rows };
+    return rows;
   } finally {
     stmt.free();
   }
@@ -124,44 +107,27 @@ function runQuery(sql, params = {}) {
 
 // -------------------- Snapshot lookups --------------------
 function getSnapshotRowJson(permitId, holderId = null, preferDate = null) {
-  // Prøv først å finne row_json på preferDate (om angitt), ellers fall tilbake til nyeste snapshot.
+  // 1) Prøv preferDate
   if (preferDate) {
     const q1 = holderId
-      ? `
-        SELECT row_json
-        FROM permit_snapshot
-        WHERE snapshot_date = $d AND permit_id = $p AND holder_id = $h
-        LIMIT 1
-      `
-      : `
-        SELECT row_json
-        FROM permit_snapshot
-        WHERE snapshot_date = $d AND permit_id = $p
-        LIMIT 1
-      `;
-    const p1 = holderId ? { $d: preferDate, $p: permitId, $h: holderId } : { $d: preferDate, $p: permitId };
-    const r1 = runQuery(q1, p1);
-    if (r1.rows && r1.rows.length > 0) return r1.rows[0][0];
+      ? `SELECT row_json FROM permit_snapshot
+         WHERE snapshot_date=$d AND permit_id=$p AND holder_id=$h LIMIT 1`
+      : `SELECT row_json FROM permit_snapshot
+         WHERE snapshot_date=$d AND permit_id=$p LIMIT 1`;
+
+    const rows1 = runQuery(q1, holderId ? { $d: preferDate, $p: permitId, $h: holderId } : { $d: preferDate, $p: permitId });
+    if (rows1.length > 0) return rows1[0][0];
   }
 
+  // 2) Fall back: nyeste
   const q2 = holderId
-    ? `
-      SELECT row_json
-      FROM permit_snapshot
-      WHERE permit_id = $p AND holder_id = $h
-      ORDER BY snapshot_date DESC
-      LIMIT 1
-    `
-    : `
-      SELECT row_json
-      FROM permit_snapshot
-      WHERE permit_id = $p
-      ORDER BY snapshot_date DESC
-      LIMIT 1
-    `;
-  const p2 = holderId ? { $p: permitId, $h: holderId } : { $p: permitId };
-  const r2 = runQuery(q2, p2);
-  if (r2.rows && r2.rows.length > 0) return r2.rows[0][0];
+    ? `SELECT row_json FROM permit_snapshot
+       WHERE permit_id=$p AND holder_id=$h ORDER BY snapshot_date DESC LIMIT 1`
+    : `SELECT row_json FROM permit_snapshot
+       WHERE permit_id=$p ORDER BY snapshot_date DESC LIMIT 1`;
+
+  const rows2 = runQuery(q2, holderId ? { $p: permitId, $h: holderId } : { $p: permitId });
+  if (rows2.length > 0) return rows2[0][0];
   return null;
 }
 
@@ -172,32 +138,59 @@ function tryExtract(obj, keys) {
   return "";
 }
 
+// -------------------- “kortkort” for liste-elementer (VERTIKALT) --------------------
+function renderVerticalCards(containerId, cardsHtml) {
+  const el = document.getElementById(containerId);
+  if (!cardsHtml || cardsHtml.length === 0) {
+    el.innerHTML = "<p>Ingen treff.</p>";
+    return;
+  }
+  el.innerHTML = cardsHtml.join("\n<hr />\n");
+}
+
+function cardFromSummary(summaryObj, permitId, holderId, preferDate, detailsTargetId, heading) {
+  // summaryObj -> key/value tabell + Detaljer-knapp
+  const detailsBtn = `
+    <button class="details-btn"
+      data-target="${escapeHtml(detailsTargetId)}"
+      data-permit="${escapeHtml(permitId)}"
+      data-holder="${escapeHtml(holderId || "")}"
+      data-date="${escapeHtml(preferDate || "")}">
+      Detaljer
+    </button>
+  `;
+
+  const title = heading ? `<h4>${escapeHtml(heading)}</h4>` : "";
+  const kv = renderKeyValueTableHtml(summaryObj);
+  return `
+    ${title}
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin: 8px 0;">
+      ${detailsBtn}
+    </div>
+    ${kv}
+  `;
+}
+
 // -------------------- View 1: Holder -> permits (NOW) --------------------
 document.getElementById("holderNowBtn").addEventListener("click", () => {
   const holderId = document.getElementById("holderNowInput").value.trim();
-  if (!holderId) {
-    clearHolderNowUI();
-    return;
-  }
+  if (!holderId) { clearHolderNowUI(); return; }
 
-  // Kortvisning: alle aktive tillatelser for innehaver, med litt snapshot-info (NAVN/LOK_NAVN/ART osv.)
   const q = `
     SELECT permit_id, valid_from
     FROM ownership_intervals
-    WHERE holder_id = $h AND valid_to IS NULL
+    WHERE holder_id=$h AND valid_to IS NULL
     ORDER BY permit_id
   `;
-  const r = runQuery(q, { $h: holderId });
+  const rows = runQuery(q, { $h: holderId });
 
-  if (!r.rows || r.rows.length === 0) {
+  if (rows.length === 0) {
     document.getElementById("holderNowResult").innerHTML = "<p>Ingen aktive tillatelser funnet for denne innehaveren.</p>";
     document.getElementById("holderNowDetails").innerHTML = "";
     return;
   }
 
-  // Bygg en tabell med “Detaljer”-knapp per rad
-  const rows = r.rows.map(([permitId, validFrom]) => {
-    // hent nyeste snapshot for permit+holder (helst i dag)
+  const cards = rows.map(([permitId, validFrom]) => {
     const rowJson = getSnapshotRowJson(permitId, holderId, latestMeta.snapshot_date);
     let navn = "", lok = "", art = "", formål = "";
     if (rowJson) {
@@ -207,49 +200,41 @@ document.getElementById("holderNowBtn").addEventListener("click", () => {
       art = tryExtract(obj, ["ART"]);
       formål = tryExtract(obj, ["FORMÅL"]);
     }
-    return [
-      permitId,
-      navn || "(mangler)",
-      lok || "",
-      art || "",
-      formål || "",
-      validFrom,
-      `<button class="details-btn" data-target="holderNowDetails" data-permit="${escapeHtml(permitId)}" data-holder="${escapeHtml(holderId)}" data-date="${escapeHtml(latestMeta.snapshot_date)}">Detaljer</button>`
-    ];
+    const summary = {
+      "TILL_NR": permitId,
+      "NAVN": navn || "(mangler)",
+      "LOK": lok || "",
+      "ART": art || "",
+      "FORMÅL": formål || "",
+      "Fra": validFrom
+    };
+    return cardFromSummary(summary, permitId, holderId, latestMeta.snapshot_date, "holderNowDetails", `Tillatelse ${permitId}`);
   });
 
-  renderTable("holderNowResult",
-    ["TILL_NR", "NAVN", "LOK", "ART", "FORMÅL", "Fra", ""],
-    rows
-  );
+  renderVerticalCards("holderNowResult", cards);
   document.getElementById("holderNowDetails").innerHTML = "";
 });
 
 // -------------------- View 2: Holder -> permits (HISTORY) --------------------
 document.getElementById("holderHistBtn").addEventListener("click", () => {
   const holderId = document.getElementById("holderHistInput").value.trim();
-  if (!holderId) {
-    clearHolderHistUI();
-    return;
-  }
+  if (!holderId) { clearHolderHistUI(); return; }
 
-  // Kortvisning: intervaller for innehaver
   const q = `
     SELECT permit_id, valid_from, COALESCE(valid_to, 'NÅ') AS valid_to
     FROM ownership_intervals
-    WHERE holder_id = $h
+    WHERE holder_id=$h
     ORDER BY permit_id, valid_from
   `;
-  const r = runQuery(q, { $h: holderId });
+  const rows = runQuery(q, { $h: holderId });
 
-  if (!r.rows || r.rows.length === 0) {
+  if (rows.length === 0) {
     document.getElementById("holderHistResult").innerHTML = "<p>Ingen historikk funnet for denne innehaveren.</p>";
     document.getElementById("holderHistDetails").innerHTML = "";
     return;
   }
 
-  const rows = r.rows.map(([permitId, from, to]) => {
-    // prøv å hente snapshot ved from (best match)
+  const cards = rows.map(([permitId, from, to]) => {
     const rowJson = getSnapshotRowJson(permitId, holderId, from);
     let navn = "", lok = "", art = "", formål = "";
     if (rowJson) {
@@ -259,34 +244,28 @@ document.getElementById("holderHistBtn").addEventListener("click", () => {
       art = tryExtract(obj, ["ART"]);
       formål = tryExtract(obj, ["FORMÅL"]);
     }
-    return [
-      permitId,
-      navn || "(mangler)",
-      lok || "",
-      art || "",
-      formål || "",
-      from,
-      to,
-      `<button class="details-btn" data-target="holderHistDetails" data-permit="${escapeHtml(permitId)}" data-holder="${escapeHtml(holderId)}" data-date="${escapeHtml(from)}">Detaljer</button>`
-    ];
+    const summary = {
+      "TILL_NR": permitId,
+      "NAVN": navn || "(mangler)",
+      "LOK": lok || "",
+      "ART": art || "",
+      "FORMÅL": formål || "",
+      "Fra": from,
+      "Til": to
+    };
+    return cardFromSummary(summary, permitId, holderId, from, "holderHistDetails", `Tillatelse ${permitId} (${from} → ${to})`);
   });
 
-  renderTable("holderHistResult",
-    ["TILL_NR", "NAVN", "LOK", "ART", "FORMÅL", "Fra", "Til", ""],
-    rows
-  );
+  renderVerticalCards("holderHistResult", cards);
   document.getElementById("holderHistDetails").innerHTML = "";
 });
 
 // -------------------- View 3: Permit -> owner (NOW) --------------------
 document.getElementById("permitNowBtn").addEventListener("click", () => {
   const permitId = document.getElementById("permitNowInput").value.trim();
-  if (!permitId) {
-    clearPermitNowUI();
-    return;
-  }
+  if (!permitId) { clearPermitNowUI(); return; }
 
-  // Kortvisning: hent snapshot (ID+NAVN + litt) + eier hvis ownership_intervals har det
+  // Snapshot (for navn osv.)
   const rowJson = getSnapshotRowJson(permitId, null, latestMeta.snapshot_date);
   if (!rowJson) {
     document.getElementById("permitNowResult").innerHTML = "<p>Fant ingen tillatelse med dette nummeret i snapshot-tabellen.</p>";
@@ -296,97 +275,92 @@ document.getElementById("permitNowBtn").addEventListener("click", () => {
 
   const obj = JSON.parse(rowJson);
   const navn = tryExtract(obj, ["NAVN"]);
-  const holderFromSnap = tryExtract(obj, ["ORG.NR/PERS.NR"]);
   const lok = tryExtract(obj, ["LOK_NAVN", "LOK_PLASS", "LOK_KOM"]);
   const art = tryExtract(obj, ["ART"]);
   const formål = tryExtract(obj, ["FORMÅL"]);
+  const holderFromSnap = tryExtract(obj, ["ORG.NR/PERS.NR"]);
 
-  // eier fra historikk-tabell (hvis finnes)
-  let eier = "", fra = "";
+  // Eier fra historikk-tabellen (hvis finnes)
   const qOwner = `
     SELECT holder_id, valid_from
     FROM ownership_intervals
-    WHERE permit_id = $p AND valid_to IS NULL
+    WHERE permit_id=$p AND valid_to IS NULL
     ORDER BY valid_from DESC
     LIMIT 1
   `;
   const own = runQuery(qOwner, { $p: permitId });
-  if (own.rows && own.rows.length > 0) {
-    eier = own.rows[0][0];
-    fra = own.rows[0][1];
-  }
+  const eier = own.length > 0 ? own[0][0] : "";
+  const eierFra = own.length > 0 ? own[0][1] : "";
 
-  const rows = [
-    ["TILL_NR", permitId],
-    ["NAVN", navn || "(mangler)"],
-    ["LOK", lok || ""],
-    ["ART", art || ""],
-    ["FORMÅL", formål || ""],
-    ["Snapshot", latestMeta.snapshot_date],
-    ["ORG.NR/PERS.NR (fra snapshot)", holderFromSnap || "(mangler)"],
-    ["Eier (fra historikk-tabell)", eier ? `${eier} (fra ${fra})` : "(ikke funnet)"]
-  ];
-  renderTable("permitNowResult", ["Felt", "Verdi"], rows);
+  const summary = {
+    "TILL_NR": permitId,
+    "NAVN": navn || "(mangler)",
+    "LOK": lok || "",
+    "ART": art || "",
+    "FORMÅL": formål || "",
+    "Snapshot": latestMeta.snapshot_date,
+    "ORG.NR/PERS.NR (fra snapshot)": holderFromSnap || "(mangler)",
+    "Eier (fra historikk-tabell)": eier ? `${eier} (fra ${eierFra})` : "(ikke funnet)"
+  };
 
-  // nytt søk -> tøm detaljer
+  // Render som ett vertikalt “kort” med Detaljer-knapp som de andre
+  const card = cardFromSummary(summary, permitId, eier || holderFromSnap || "", latestMeta.snapshot_date, "permitNowDetails", `Tillatelse ${permitId}`);
+  renderVerticalCards("permitNowResult", [card]);
   document.getElementById("permitNowDetails").innerHTML = "";
 });
 
-document.getElementById("permitNowDetailsBtn").addEventListener("click", () => {
-  const permitId = document.getElementById("permitNowInput").value.trim();
-  if (!permitId) {
-    clearPermitNowUI();
-    return;
-  }
-  const rowJson = getSnapshotRowJson(permitId, null, latestMeta.snapshot_date);
-  if (!rowJson) {
-    document.getElementById("permitNowDetails").innerHTML = "<p>Fant ingen detaljer for denne tillatelsen.</p>";
-    return;
-  }
-  renderKeyValueTable("permitNowDetails", JSON.parse(rowJson));
-});
+// (Valgfritt) behold knappen i HTML, men la den gjøre det samme som “Detaljer”
+const permitNowDetailsBtn = document.getElementById("permitNowDetailsBtn");
+if (permitNowDetailsBtn) {
+  permitNowDetailsBtn.addEventListener("click", () => {
+    const permitId = document.getElementById("permitNowInput").value.trim();
+    if (!permitId) { clearPermitNowUI(); return; }
+    const rowJson = getSnapshotRowJson(permitId, null, latestMeta.snapshot_date);
+    if (!rowJson) {
+      document.getElementById("permitNowDetails").innerHTML = "<p>Fant ingen detaljer for denne tillatelsen.</p>";
+      return;
+    }
+    renderDetails("permitNowDetails", JSON.parse(rowJson), `Detaljer for ${permitId}`);
+  });
+}
 
 // -------------------- View 4: Permit -> owners (HISTORY) --------------------
 document.getElementById("permitHistBtn").addEventListener("click", () => {
   const permitId = document.getElementById("permitHistInput").value.trim();
-  if (!permitId) {
-    clearPermitHistUI();
-    return;
-  }
+  if (!permitId) { clearPermitHistUI(); return; }
 
-  // Kortvisning: eier-intervaller
   const q = `
     SELECT holder_id, valid_from, COALESCE(valid_to, 'NÅ') AS valid_to
     FROM ownership_intervals
-    WHERE permit_id = $p
+    WHERE permit_id=$p
     ORDER BY valid_from
   `;
-  const r = runQuery(q, { $p: permitId });
+  const rows = runQuery(q, { $p: permitId });
 
-  if (!r.rows || r.rows.length === 0) {
+  if (rows.length === 0) {
     document.getElementById("permitHistResult").innerHTML = "<p>Ingen historikk funnet for denne tillatelsen.</p>";
     document.getElementById("permitHistDetails").innerHTML = "";
     return;
   }
 
-  const rows = r.rows.map(([holderId, from, to]) => {
-    // prøv å hente snapshot ved from for å få NAVN (ofte innehavers navn)
+  const cards = rows.map(([holderId, from, to]) => {
     const rowJson = getSnapshotRowJson(permitId, holderId, from);
     let navn = "";
     if (rowJson) {
       const obj = JSON.parse(rowJson);
       navn = tryExtract(obj, ["NAVN"]);
     }
-    return [
-      holderId,
-      navn || "(mangler)",
-      from,
-      to,
-      `<button class="details-btn" data-target="permitHistDetails" data-permit="${escapeHtml(permitId)}" data-holder="${escapeHtml(holderId)}" data-date="${escapeHtml(from)}">Detaljer</button>`
-    ];
+    const summary = {
+      "TILL_NR": permitId,
+      "ORG.NR/PERS.NR": holderId,
+      "NAVN": navn || "(mangler)",
+      "Fra": from,
+      "Til": to
+    };
+    return cardFromSummary(summary, permitId, holderId, from, "permitHistDetails", `Eierperiode ${from} → ${to}`);
   });
 
-  renderTable("permitHistResult", ["ORG.NR/PERS.NR", "NAVN", "Fra", "Til", ""], rows);
+  renderVerticalCards("permitHistResult", cards);
   document.getElementById("permitHistDetails").innerHTML = "";
 });
 
@@ -397,15 +371,16 @@ document.addEventListener("click", (e) => {
 
   const targetId = btn.getAttribute("data-target");
   const permitId = btn.getAttribute("data-permit");
-  const holderId = btn.getAttribute("data-holder");
-  const date = btn.getAttribute("data-date"); // vi prøver å hente snapshot ved denne datoen
+  const holderId = btn.getAttribute("data-holder") || null;
+  const date = btn.getAttribute("data-date") || null;
 
-  const rowJson = getSnapshotRowJson(permitId, holderId || null, date || null);
+  const rowJson = getSnapshotRowJson(permitId, holderId && holderId.trim() !== "" ? holderId : null, date && date.trim() !== "" ? date : null);
   if (!rowJson) {
     document.getElementById(targetId).innerHTML = "<p>Fant ingen snapshot-rad for denne kombinasjonen (tillatelse/innehaver/dato).</p>";
     return;
   }
-  renderKeyValueTable(targetId, JSON.parse(rowJson));
+
+  renderDetails(targetId, JSON.parse(rowJson), `Detaljer for ${permitId}`);
 });
 
 // -------------------- Clear-on-empty + Enter-to-search for all inputs --------------------
