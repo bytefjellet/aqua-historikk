@@ -63,11 +63,12 @@ jobs:
           cat > docs/latest.json <<'JSON'
           {
             "snapshot_date": "${{ steps.fetch.outputs.snapshot_date }}",
-            "sqlite_gz_url": "https://github.com/${{ github.repository }}/releases/download/latest/latest.sqlite.gz"
+            "sqlite_gz_url": "./latest.sqlite.gz"
           }
           JSON
           cat docs/latest.json
-          
+
+
       - name: Commit latest.json (for GitHub Pages)
         run: |
           git config user.name "github-actions[bot]"
