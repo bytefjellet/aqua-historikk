@@ -16,6 +16,10 @@
       <button id="filterGrunnrenteBtn" class="filter-btn">Grunnrenteskattepliktige</button>
       <small id="activeFilterLabel"></small>
     </div>
+
+    <p class="hint">
+      Tips: Du kan dele lenker til søk (URL-parametre settes automatisk når du søker).
+    </p>
   </header>
 
   <main>
@@ -36,6 +40,7 @@
       <div class="row">
         <button id="holderNowBtn">Søk</button>
         <button id="holderNowDetailsBtn" disabled>Vis detaljer</button>
+        <button id="holderNowExportBtn" disabled>Last ned CSV</button>
       </div>
 
       <div class="result" id="holderNowSummary"></div>
@@ -52,6 +57,7 @@
       <div class="row">
         <button id="holderHistBtn">Søk</button>
         <button id="holderHistDetailsBtn" disabled>Vis detaljer</button>
+        <button id="holderHistExportBtn" disabled>Last ned CSV</button>
       </div>
 
       <div class="result" id="holderHistSummary"></div>
@@ -68,6 +74,7 @@
 
       <div class="row">
         <button id="permitNowBtn">Søk</button>
+        <button id="permitNowExportBtn" disabled>Last ned CSV</button>
       </div>
 
       <div class="result" id="permitNowResult"></div>
@@ -87,6 +94,7 @@
 
       <div class="row">
         <button id="permitHistBtn">Søk</button>
+        <button id="permitHistExportBtn" disabled>Last ned CSV</button>
       </div>
 
       <div class="result" id="permitHistResult"></div>
