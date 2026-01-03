@@ -277,3 +277,74 @@ th {
   color: var(--muted);
   font-size: 0.9rem;
 }
+/* =========================
+   Details toolbar (sort/filter/kolonner)
+========================= */
+.details-toolbar{
+  margin-bottom: 12px;
+}
+
+.details-toolbar-row{
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.dt-label{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.dt-input{
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #ccc;
+  min-width: 220px;
+}
+
+.dt-select{
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #ccc;
+  min-width: 180px;
+}
+
+.dt-meta{
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding-bottom: 6px;
+}
+
+.dt-columns summary{
+  cursor: pointer;
+  color: var(--blue);
+  font-weight: 800;
+  margin-top: 10px;
+}
+
+.dt-columns-grid{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 6px 12px;
+  margin-top: 10px;
+}
+
+.dt-check{
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.dt-sort{
+  cursor: pointer;
+  user-select: none;
+}
+
