@@ -5,7 +5,6 @@
   --blue: #2c436b;
   --blue-active: #4b6fb3;
 
-  --table-head: #2c436b;
   --zebra: #eff3f9;
 
   --text: #111;
@@ -233,9 +232,10 @@ th {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   font-weight: 800;
-  background: var(--table-head);
+  background: var(--blue);   /* samme som knapper (ikke hover) */
   color: #ffffff;
 }
+
 
 /* Zebra kun i detalj-tabeller */
 .details-area table.zebra tbody tr:nth-child(even) {
