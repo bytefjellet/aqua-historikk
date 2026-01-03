@@ -16,23 +16,25 @@ document.querySelectorAll(".tab").forEach(btn => {
   btn.addEventListener("click", () => switchTab(btn.dataset.tab));
 });
 
-function renderTable(containerId, columns, rows) {
+function renderKeyValueTable(containerId, obj) {
   const el = document.getElementById(containerId);
-  if (!rows || rows.length === 0) {
-    el.innerHTML = "<p>Ingen treff.</p>";
+  if (!obj || Object.keys(obj).length === 0) {
+    el.innerHTML = "<p>Ingen detaljer funnet.</p>";
     return;
   }
-  let html = "<table><thead><tr>";
-  for (const c of columns) html += `<th>${c}</th>`;
-  html += "</tr></thead><tbody>";
-  for (const r of rows) {
-    html += "<tr>";
-    for (const cell of r) html += `<td>${cell === null ? "" : String(cell)}</td>`;
-    html += "</tr>";
+
+  let html = "<table><thead><tr><th>Felt</th><th>Verdi</th></tr></thead><tbody>";
+  for (const key of Object.keys(obj).sort()) {
+    const val = obj[key];
+    html += `<tr>
+      <td><code>${key}</code></td>
+      <td>${val === null ? "" : String(val)}</td>
+    </tr>`;
   }
   html += "</tbody></table>";
   el.innerHTML = html;
 }
+
 
 async function loadLatestJson() {
   const r = await fetch("./latest.json", { cache: "no-store" });
@@ -144,3 +146,28 @@ document.getElementById("permitHistBtn").addEventListener("click", () => {
     setStatus("Feil: " + e.message);
   }
 })();
+
+// ---- DETALJER: Tillatelse -> hele raden (siste snapshot)
+document.getElementById("permitDetailsBtn").addEventListener("click", () => {
+  const permitId = document.getElementById("permitNowInput").value.trim();
+  if (!permitId) return;
+
+  const q = `
+    SELECT row_json
+    FROM permit_snapshot
+    WHERE permit_id = $permit
+    ORDER BY snapshot_date DESC
+    LIMIT 1
+  `;
+
+  const { rows } = runQuery(q, { $permit: permitId });
+
+  if (!rows || rows.length === 0) {
+    document.getElementById("permitDetailsResult").innerHTML =
+      "<p>Fant ingen detaljer for denne tillatelsen.</p>";
+    return;
+  }
+
+  const rowObj = JSON.parse(rows[0][0]);
+  renderKeyValueTable("permitDetailsResult", rowObj);
+});
