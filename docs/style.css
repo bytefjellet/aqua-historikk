@@ -40,14 +40,14 @@ header {
 }
 
 /* =========================
-   Main
-========================= */
-main {
-  /* container tar seg av padding/max-width */
-}
-
-/* =========================
-   Tabs (4 visninger) - kompakt
+   Tabs / Filter (felles knappestil)
+   - Identisk styling på:
+     * Alle tillatelser
+     * Grunnrenteskattepliktige
+     * Innehaver – gjeldende
+     * Innehaver – historikk
+     * Tillatelse – eier
+     * Tillatelse – historikk
 ========================= */
 .tabs {
   display: flex;
@@ -56,26 +56,57 @@ main {
   margin-bottom: 16px;
 }
 
-.tab {
-  padding: 7px 12px;
-  border-radius: 10px;
+.row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 8px 0 12px;
+}
+
+/* Felles “pill/button”-utseende for både faner og filter */
+.tab,
+.filter-btn {
   border: 1px solid var(--blue);
   background: var(--blue);
   color: #fff;
-  cursor: pointer;
+
   font-weight: 800;
   font-size: 0.9rem;
   letter-spacing: 0.03em;
   line-height: 1.2;
+
+  /* identisk form og størrelse */
+  border-radius: 999px;
+  padding: 7px 14px;
+
+  cursor: pointer;
+  box-shadow: none;
+
+  /* identisk “inaktiv” tyngde */
+  opacity: 0.82;
+
+  transition:
+    opacity 120ms ease,
+    filter 120ms ease,
+    background 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
-.tab:hover {
-  filter: brightness(1.08);
+.tab:hover,
+.filter-btn:hover {
+  opacity: 0.92;
+  filter: brightness(1.06);
 }
 
-.tab.active {
+/* identisk “active” for begge */
+.tab.active,
+.filter-btn.active {
   background: var(--blue-active);
   border-color: var(--blue-active);
+  opacity: 1;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.08);
 }
 
 /* =========================
@@ -93,16 +124,8 @@ main {
 }
 
 /* =========================
-   Layout helpers
+   Forms
 ========================= */
-.row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
-  margin: 8px 0 12px;
-}
-
 label {
   display: block;
   margin: 10px 0 6px;
@@ -117,7 +140,7 @@ input {
 }
 
 /* =========================
-   Buttons (generelt)
+   Other buttons (Søk / Vis detaljer / CSV)
 ========================= */
 button {
   padding: 10px 12px;
@@ -136,40 +159,12 @@ button:disabled {
   cursor: not-allowed;
 }
 
-/* =========================
-   Filterknapper (header) - kompakte pills, blå profil
-========================= */
+/* Viktig: sørg for at .tab og .filter-btn ikke blir overstyrt av button-regelen */
+.tab,
 .filter-btn {
-  border: 1px solid var(--blue);
-  background: var(--blue);
-  color: #fff;
-  font-weight: 800;
-
+  padding: 7px 14px; /* re-assert */
   border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 0.9rem;
-  line-height: 1.2;
-
-  opacity: 0.8;
-  box-shadow: none;
-
-  transition:
-    opacity 120ms ease,
-    filter 120ms ease,
-    background 120ms ease,
-    border-color 120ms ease;
-}
-
-.filter-btn:hover {
-  opacity: 0.92;
-  filter: brightness(1.06);
-}
-
-.filter-btn.active {
-  background: var(--blue-active);
-  border-color: var(--blue-active);
-  opacity: 1;
-  box-shadow: 0 1px 0 rgba(0,0,0,0.08);
+  border-color: var(--blue);
 }
 
 /* =========================
