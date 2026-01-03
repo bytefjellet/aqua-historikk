@@ -9,7 +9,9 @@
 <body>
   <header>
     <h1>Akvakulturregisteret – historikk</h1>
-    <p id="status">Laster…</p>
+
+    <!-- beholdes kun for bakoverkompatibilitet, men vises ikke -->
+    <p id="status" style="display:none">Laster…</p>
 
     <div class="row">
       <button id="filterAllBtn" class="filter-btn active">Alle tillatelser</button>
@@ -103,6 +105,11 @@
       <p class="hint">Klikk «Vis detaljer» på en eierperiode for å vise snapshot (hel rad) ved periodens startdato, hvis tilgjengelig.</p>
       <div class="result" id="permitHistDetails"></div>
     </section>
+
+    <!-- Footer-status under nederste synlige boks -->
+    <footer class="page-footer">
+      <p id="statusFooter">Laster…</p>
+    </footer>
   </main>
 
   <!-- pako (gzip) -->
