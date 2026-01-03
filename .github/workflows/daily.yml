@@ -42,11 +42,17 @@ jobs:
 
       - name: Build / update SQLite
         run: |
-          mkdir -p db
-          mkdir -p work
-          mkdir -p docs
+          mkdir -p db work docs
           python ingest/build_sqlite.py "${{ steps.fetch.outputs.clean_csv }}" "${{ steps.fetch.outputs.snapshot_date }}" "db/aqua.sqlite" "config/filter.yml"
+      
+          echo "---- after build ----"
+          ls -lah db || true
+      
           gzip -c db/aqua.sqlite > docs/latest.sqlite.gz
+      
+          echo "---- after gzip ----"
+          ls -lah docs || true
+
 
       - name: Create or update release "latest"
         env:
