@@ -20,46 +20,73 @@
       <button class="tab" data-tab="permit-history">Tillatelse → eier (historikk)</button>
     </section>
 
+    <!-- Innehaver -> tillatelser (i dag) -->
     <section class="panel active" id="holder-now">
       <h2>Innehaver → tillatelser (i dag)</h2>
       <label>ORG.NR/PERS.NR
         <input id="holderNowInput" placeholder="f.eks. 123456789" />
       </label>
-      <button id="holderNowBtn">Søk</button>
+      <div class="row">
+        <button id="holderNowBtn">Søk</button>
+      </div>
+
       <div class="result" id="holderNowResult"></div>
+
+      <h3>Detaljer</h3>
+      <p class="hint">Klikk “Detaljer” på en rad for å vise hele raden fra siste snapshot.</p>
+      <div class="result" id="holderNowDetails"></div>
     </section>
 
+    <!-- Innehaver -> tillatelser (historikk) -->
     <section class="panel" id="holder-history">
       <h2>Innehaver → tillatelser (historikk)</h2>
       <label>ORG.NR/PERS.NR
         <input id="holderHistInput" placeholder="f.eks. 123456789" />
       </label>
-      <button id="holderHistBtn">Søk</button>
+      <div class="row">
+        <button id="holderHistBtn">Søk</button>
+      </div>
+
       <div class="result" id="holderHistResult"></div>
+
+      <h3>Detaljer</h3>
+      <p class="hint">Klikk “Detaljer” på en rad for å vise hele raden (fra snapshot ved startdato om mulig, ellers siste snapshot).</p>
+      <div class="result" id="holderHistDetails"></div>
     </section>
 
+    <!-- Tillatelse -> eier (i dag) -->
     <section class="panel" id="permit-now">
       <h2>Tillatelse → eier (i dag)</h2>
       <label>TILL_NR
         <input id="permitNowInput" placeholder="f.eks. ABC123 (nøyaktig som i CSV)" />
       </label>
 
-      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+      <div class="row">
         <button id="permitNowBtn">Søk</button>
-        <button id="permitDetailsBtn">Vis detaljer (hele raden)</button>
+        <button id="permitNowDetailsBtn">Vis detaljer (hele raden)</button>
       </div>
 
       <div class="result" id="permitNowResult"></div>
-      <div class="result" id="permitDetailsResult"></div>
+
+      <h3>Detaljer</h3>
+      <div class="result" id="permitNowDetails"></div>
     </section>
 
+    <!-- Tillatelse -> eier (historikk) -->
     <section class="panel" id="permit-history">
       <h2>Tillatelse → eier (historikk)</h2>
       <label>TILL_NR
         <input id="permitHistInput" placeholder="f.eks. ABC123" />
       </label>
-      <button id="permitHistBtn">Søk</button>
+      <div class="row">
+        <button id="permitHistBtn">Søk</button>
+      </div>
+
       <div class="result" id="permitHistResult"></div>
+
+      <h3>Detaljer</h3>
+      <p class="hint">Klikk “Detaljer” på en eier-periode for å vise hele raden fra snapshot ved periodens startdato (om mulig).</p>
+      <div class="result" id="permitHistDetails"></div>
     </section>
   </main>
 
