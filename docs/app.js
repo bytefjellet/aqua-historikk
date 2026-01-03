@@ -82,9 +82,30 @@ function renderKeyValue(containerId, obj, title = null) {
 
 // -------------------- Formatting helpers --------------------
 function formatPermitIdForDisplay(permitId) {
-  // Vis med bindestrek istedenfor mellomrom: "F A 0011" -> "F-A-0011"
-  // Ikke endre permitId som brukes til DB-oppslag, kun display.
+  // "F A 0011" -> "F-A-0011"
   return String(permitId).trim().replace(/\s+/g, "-");
+}
+
+function normalizePermitIdForLookup(input) {
+  // Tillat søk både med bindestrek og mellomrom:
+  // "F-A-0011" -> "F A 0011"
+  // "F   A   0011" -> "F A 0011"
+  // "F - A - 0011" -> "F A 0011"
+  if (!input) return "";
+  return String(input)
+    .trim()
+    .replace(/\s*-\s*/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+// Brukes for å justere objektet som vises i "Detaljer" slik at TILL_NR blir med bindestrek
+function normalizeDetailsObjectForDisplay(obj) {
+  if (!obj || typeof obj !== "object") return obj;
+  const out = { ...obj };
+  if (out["TILL_NR"] != null && String(out["TILL_NR"]).trim() !== "") {
+    out["TILL_NR"] = formatPermitIdForDisplay(out["TILL_NR"]);
+  }
+  return out;
 }
 
 // -------------------- Clear helpers --------------------
@@ -334,7 +355,6 @@ document.getElementById("holderNowBtn").addEventListener("click", () => {
   const holderId = document.getElementById("holderNowInput").value.trim();
   if (!holderId) { clearHolderNowUI(); return; }
 
-  // 1) Total (uten filter): aktive permits
   const qAll = `
     SELECT DISTINCT permit_id
     FROM ownership_intervals
@@ -344,7 +364,6 @@ document.getElementById("holderNowBtn").addEventListener("click", () => {
   const allRows = runQuery(qAll, { $h: holderId });
   const allPermitIds = allRows.map(r => r[0]);
 
-  // 2) Visning (med aktivt filter): aktive permits
   const fc = filterConditionSql("permit_id");
   const qView = `
     SELECT DISTINCT permit_id
@@ -395,7 +414,6 @@ document.getElementById("holderHistBtn").addEventListener("click", () => {
   const holderId = document.getElementById("holderHistInput").value.trim();
   if (!holderId) { clearHolderHistUI(); return; }
 
-  // 1) Total (uten filter): unike permits over tid
   const qAll = `
     SELECT DISTINCT permit_id
     FROM ownership_intervals
@@ -405,7 +423,6 @@ document.getElementById("holderHistBtn").addEventListener("click", () => {
   const allRows = runQuery(qAll, { $h: holderId });
   const allPermitIds = allRows.map(r => r[0]);
 
-  // 2) Visning (med aktivt filter)
   const fc = filterConditionSql("permit_id");
   const qView = `
     SELECT DISTINCT permit_id
@@ -451,30 +468,36 @@ document.getElementById("holderHistDetailsBtn").addEventListener("click", () => 
   renderHolderDetailsTable("holderHistDetails", holderId, holderHistPermitIds);
 });
 
-// -------------------- Permit views (uendret) --------------------
+// -------------------- Permit views (med bindestrek-visning i kort + overskrift + detaljer-tabell) --------------------
 function renderKeyValueTableHtml(obj, title = null) {
   const keys = Object.keys(obj || {});
   if (!obj || keys.length === 0) return "<p>Ingen data.</p>";
+
+  // Sørg for at "TILL_NR" i detalj-tabellen vises med bindestrek
+  const o = normalizeDetailsObjectForDisplay(obj);
+
   let html = "";
   if (title) html += `<h4>${escapeHtml(title)}</h4>`;
   html += "<table><thead><tr><th>Felt</th><th>Verdi</th></tr></thead><tbody>";
-  for (const key of keys.sort()) {
-    const val = obj[key];
+  for (const key of Object.keys(o).sort()) {
+    const val = o[key];
     html += `<tr><td><code>${escapeHtml(key)}</code></td><td>${val == null ? "" : escapeHtml(String(val))}</td></tr>`;
   }
   html += "</tbody></table>";
   return html;
 }
+
 function renderVerticalCards(containerId, cardsHtml) {
   const el = document.getElementById(containerId);
   if (!cardsHtml || cardsHtml.length === 0) { el.innerHTML = "<p>Ingen treff.</p>"; return; }
   el.innerHTML = cardsHtml.join("\n<hr />\n");
 }
-function cardFromSummary(summaryObj, permitId, holderId, preferDate, detailsTargetId, heading) {
+
+function cardFromSummary(summaryObj, permitIdForData, holderId, preferDate, detailsTargetId, heading) {
   const detailsBtn = `
     <button class="details-btn"
       data-target="${escapeHtml(detailsTargetId)}"
-      data-permit="${escapeHtml(permitId)}"
+      data-permit="${escapeHtml(permitIdForData)}"
       data-holder="${escapeHtml(holderId || "")}"
       data-date="${escapeHtml(preferDate || "")}">
       Detaljer
@@ -486,19 +509,23 @@ function cardFromSummary(summaryObj, permitId, holderId, preferDate, detailsTarg
 }
 
 document.getElementById("permitNowBtn").addEventListener("click", () => {
-  const permitId = document.getElementById("permitNowInput").value.trim();
-  if (!permitId) { clearPermitNowUI(); return; }
+  const raw = document.getElementById("permitNowInput").value.trim();
+  if (!raw) { clearPermitNowUI(); return; }
+
+  const permitId = normalizePermitIdForLookup(raw);
+  const permitDisplay = formatPermitIdForDisplay(permitId);
 
   if (activeFilter && !permitIsInActiveFilter(permitId)) {
     document.getElementById("permitNowResult").innerHTML =
-      `<p>Tillatelsen <code>${escapeHtml(permitId)}</code> er ikke innen filteret “${escapeHtml(activeFilter)}”.</p>`;
+      `<p>Tillatelsen <code>${escapeHtml(raw)}</code> er ikke innen filteret “${escapeHtml(activeFilter)}”.</p>`;
     document.getElementById("permitNowDetails").innerHTML = "";
     return;
   }
 
   const rowJson = getSnapshotRowJson(permitId, null, latestMeta.snapshot_date);
   if (!rowJson) {
-    document.getElementById("permitNowResult").innerHTML = "<p>Fant ingen tillatelse med dette nummeret i snapshot-tabellen.</p>";
+    document.getElementById("permitNowResult").innerHTML =
+      `<p>Fant ingen tillatelse med dette nummeret: <code>${escapeHtml(raw)}</code></p>`;
     document.getElementById("permitNowDetails").innerHTML = "";
     return;
   }
@@ -516,25 +543,28 @@ document.getElementById("permitNowBtn").addEventListener("click", () => {
   const eierFra = own.length ? own[0][1] : "";
 
   const summary = {
-    "TILL_NR": permitId,
+    "TILL_NR": permitDisplay,
     "NAVN": tryExtract(obj, "NAVN") || "(mangler)",
     "Snapshot": latestMeta.snapshot_date,
     "Eier (fra historikk-tabell)": eier ? `${eier} (fra ${eierFra})` : "(ikke funnet)"
   };
 
   renderVerticalCards("permitNowResult", [
-    cardFromSummary(summary, permitId, eier || "", latestMeta.snapshot_date, "permitNowDetails", `Tillatelse ${permitId}`)
+    cardFromSummary(summary, permitId, eier || "", latestMeta.snapshot_date, "permitNowDetails", `Tillatelse ${permitDisplay}`)
   ]);
   document.getElementById("permitNowDetails").innerHTML = "";
 });
 
 document.getElementById("permitHistBtn").addEventListener("click", () => {
-  const permitId = document.getElementById("permitHistInput").value.trim();
-  if (!permitId) { clearPermitHistUI(); return; }
+  const raw = document.getElementById("permitHistInput").value.trim();
+  if (!raw) { clearPermitHistUI(); return; }
+
+  const permitId = normalizePermitIdForLookup(raw);
+  const permitDisplay = formatPermitIdForDisplay(permitId);
 
   if (activeFilter && !permitIsInActiveFilter(permitId)) {
     document.getElementById("permitHistResult").innerHTML =
-      `<p>Tillatelsen <code>${escapeHtml(permitId)}</code> er ikke innen filteret “${escapeHtml(activeFilter)}”.</p>`;
+      `<p>Tillatelsen <code>${escapeHtml(raw)}</code> er ikke innen filteret “${escapeHtml(activeFilter)}”.</p>`;
     document.getElementById("permitHistDetails").innerHTML = "";
     return;
   }
@@ -548,7 +578,8 @@ document.getElementById("permitHistBtn").addEventListener("click", () => {
   const rows = runQuery(q, { $p: permitId });
 
   if (!rows.length) {
-    document.getElementById("permitHistResult").innerHTML = "<p>Ingen historikk funnet for denne tillatelsen.</p>";
+    document.getElementById("permitHistResult").innerHTML =
+      `<p>Ingen historikk funnet for denne tillatelsen: <code>${escapeHtml(raw)}</code></p>`;
     document.getElementById("permitHistDetails").innerHTML = "";
     return;
   }
@@ -561,7 +592,7 @@ document.getElementById("permitHistBtn").addEventListener("click", () => {
       navn = tryExtract(obj, "NAVN");
     }
     const summary = {
-      "TILL_NR": permitId,
+      "TILL_NR": permitDisplay,
       "ORG.NR/PERS.NR": holderId,
       "NAVN": navn || "(mangler)",
       "Fra": from,
@@ -579,7 +610,7 @@ document.addEventListener("click", (e) => {
   if (!btn) return;
 
   const targetId = btn.getAttribute("data-target");
-  const permitId = btn.getAttribute("data-permit");
+  const permitId = btn.getAttribute("data-permit"); // DB-format (mellomrom)
   const holderId = (btn.getAttribute("data-holder") || "").trim() || null;
   const date = (btn.getAttribute("data-date") || "").trim() || null;
 
@@ -588,7 +619,12 @@ document.addEventListener("click", (e) => {
     document.getElementById(targetId).innerHTML = "<p>Fant ingen snapshot-rad for denne kombinasjonen.</p>";
     return;
   }
-  document.getElementById(targetId).innerHTML = renderKeyValueTableHtml(JSON.parse(rowJson), `Detaljer for ${permitId}`);
+
+  const permitDisplay = formatPermitIdForDisplay(permitId);
+  const detailsObj = normalizeDetailsObjectForDisplay(JSON.parse(rowJson));
+
+  document.getElementById(targetId).innerHTML =
+    renderKeyValueTableHtml(detailsObj, `Detaljer for ${permitDisplay}`);
 });
 
 // -------------------- Filter buttons --------------------
