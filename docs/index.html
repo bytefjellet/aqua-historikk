@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="no">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Akvakulturregisteret – historikk</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header>
+    <h1>Akvakulturregisteret – historikk</h1>
+    <p id="status">Laster…</p>
+  </header>
+
+  <main>
+    <section class="tabs">
+      <button class="tab active" data-tab="holder-now">Innehaver → tillatelser (i dag)</button>
+      <button class="tab" data-tab="holder-history">Innehaver → tillatelser (historikk)</button>
+      <button class="tab" data-tab="permit-now">Tillatelse → eier (i dag)</button>
+      <button class="tab" data-tab="permit-history">Tillatelse → eier (historikk)</button>
+    </section>
+
+    <section class="panel active" id="holder-now">
+      <h2>Innehaver → tillatelser (i dag)</h2>
+      <label>ORG.NR/PERS.NR
+        <input id="holderNowInput" placeholder="f.eks. 123456789" />
+      </label>
+      <button id="holderNowBtn">Søk</button>
+      <div class="result" id="holderNowResult"></div>
+    </section>
+
+    <section class="panel" id="holder-history">
+      <h2>Innehaver → tillatelser (historikk)</h2>
+      <label>ORG.NR/PERS.NR
+        <input id="holderHistInput" placeholder="f.eks. 123456789" />
+      </label>
+      <button id="holderHistBtn">Søk</button>
+      <div class="result" id="holderHistResult"></div>
+    </section>
+
+    <section class="panel" id="permit-now">
+      <h2>Tillatelse → eier (i dag)</h2>
+      <label>TILL_NR
+        <input id="permitNowInput" placeholder="f.eks. ABC123 (nøyaktig som i CSV)" />
+      </label>
+      <button id="permitNowBtn">Søk</button>
+      <div class="result" id="permitNowResult"></div>
+    </section>
+
+    <section class="panel" id="permit-history">
+      <h2>Tillatelse → eier (historikk)</h2>
+      <label>TILL_NR
+        <input id="permitHistInput" placeholder="f.eks. ABC123" />
+      </label>
+      <button id="permitHistBtn">Søk</button>
+      <div class="result" id="permitHistResult"></div>
+    </section>
+  </main>
+
+  <!-- pako (gzip) -->
+  <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+
+  <!-- sql.js -->
+  <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js"></script>
+
+  <script src="./app.js"></script>
+</body>
+</html>
