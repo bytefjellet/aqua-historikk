@@ -10,7 +10,6 @@
 
   --text: #111;
   --muted: #555;
-  --border: #e9e9e9;
 
   --header-bg: #f6f8fb;
 
@@ -25,35 +24,30 @@ body {
   background: #ffffff;
 }
 
-/* =========================
-   Header aligned with main
-   + diskret bakgrunn
-========================= */
-header {
+/* Felles innrykk/bredde */
+.container {
+  max-width: var(--content-max);
+  margin: 0 auto;
   padding: 16px;
-  border-bottom: 1px solid #ddd;
-  background: var(--header-bg);
 }
 
-header > * {
-  max-width: var(--content-max);
-  margin-left: auto;
-  margin-right: auto;
-  width: 100%;
+/* =========================
+   Header
+========================= */
+header {
+  border-bottom: 1px solid #ddd;
+  background: var(--header-bg);
 }
 
 /* =========================
    Main
 ========================= */
 main {
-  padding: 16px;
-  max-width: var(--content-max);
-  margin: 0 auto;
+  /* container tar seg av padding/max-width */
 }
 
 /* =========================
-   Tabs (4 visninger)
-   Kompaktere høyde
+   Tabs (4 visninger) - kompakt
 ========================= */
 .tabs {
   display: flex;
@@ -63,14 +57,14 @@ main {
 }
 
 .tab {
-  padding: 7px 12px;          /* redusert høyde */
+  padding: 7px 12px;
   border-radius: 10px;
   border: 1px solid var(--blue);
   background: var(--blue);
   color: #fff;
   cursor: pointer;
   font-weight: 800;
-  font-size: 0.9rem;          /* litt mindre tekst */
+  font-size: 0.9rem;
   letter-spacing: 0.03em;
   line-height: 1.2;
 }
@@ -143,8 +137,7 @@ button:disabled {
 }
 
 /* =========================
-   Filterknapper (header)
-   Kompakte pills – blå profil
+   Filterknapper (header) - kompakte pills, blå profil
 ========================= */
 .filter-btn {
   border: 1px solid var(--blue);
