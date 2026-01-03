@@ -10,6 +10,12 @@ import yaml
 PERMIT_COL = "TILL_NR"
 HOLDER_COL = "ORG.NR/PERS.NR"
 
+def detect_delimiter(sample_text: str) -> str:
+    # Enkel og robust for ditt tilfelle (CSV ser ut til å være ';')
+    if sample_text.count(";") >= sample_text.count(","):
+        return ";"
+    return ","
+
 def sha256_text(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
