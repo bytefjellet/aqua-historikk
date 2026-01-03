@@ -8,110 +8,107 @@
 </head>
 <body>
   <header>
-    <h1>Akvakulturregisteret – historikk</h1>
+    <div class="container">
+      <h1>Akvakulturregisteret – historikk</h1>
 
-    <!-- Brødsmulesti -->
-    <nav class="breadcrumb" aria-label="Brødsmulesti">
-      <span class="crumb">Forside</span>
-      <span class="separator">›</span>
-      <span class="crumb current">Akvakulturregisteret – historikk</span>
-    </nav>
+      <!-- beholdes kun for bakoverkompatibilitet, men vises ikke -->
+      <p id="status" style="display:none">Laster…</p>
 
-    <!-- skjult legacy-status -->
-    <p id="status" style="display:none">Laster…</p>
-
-    <div class="row">
-      <button id="filterAllBtn" class="filter-btn active">Alle tillatelser</button>
-      <button id="filterGrunnrenteBtn" class="filter-btn">Grunnrenteskattepliktige</button>
-      <small id="activeFilterLabel"></small>
+      <div class="row">
+        <button id="filterAllBtn" class="filter-btn active">Alle tillatelser</button>
+        <button id="filterGrunnrenteBtn" class="filter-btn">Grunnrenteskattepliktige</button>
+        <small id="activeFilterLabel"></small>
+      </div>
     </div>
   </header>
 
   <main>
-    <section class="tabs">
-      <button class="tab active" data-tab="holder-now">Innehaver – gjeldende</button>
-      <button class="tab" data-tab="holder-history">Innehaver – historikk</button>
-      <button class="tab" data-tab="permit-now">Tillatelse – eier</button>
-      <button class="tab" data-tab="permit-history">Tillatelse – historikk</button>
-    </section>
+    <div class="container">
+      <section class="tabs">
+        <button class="tab active" data-tab="holder-now">Innehaver – gjeldende</button>
+        <button class="tab" data-tab="holder-history">Innehaver – historikk</button>
+        <button class="tab" data-tab="permit-now">Tillatelse – eier</button>
+        <button class="tab" data-tab="permit-history">Tillatelse – historikk</button>
+      </section>
 
-    <!-- Innehaver – gjeldende -->
-    <section class="panel active" id="holder-now">
-      <h2>Innehaver – gjeldende</h2>
+      <!-- Innehaver – gjeldende -->
+      <section class="panel active" id="holder-now">
+        <h2>Innehaver – gjeldende</h2>
 
-      <label for="holderNowInput">Organisasjonsnummer / fødselsnummer</label>
-      <input id="holderNowInput" placeholder="F.eks. 983970400" />
+        <label for="holderNowInput">Organisasjonsnummer / fødselsnummer</label>
+        <input id="holderNowInput" placeholder="F.eks. 983970400" />
 
-      <div class="row">
-        <button id="holderNowBtn">Søk</button>
-        <button id="holderNowDetailsBtn" disabled>Vis detaljer</button>
-        <button id="holderNowExportBtn" disabled>Last ned CSV</button>
-      </div>
+        <div class="row">
+          <button id="holderNowBtn">Søk</button>
+          <button id="holderNowDetailsBtn" disabled>Vis detaljer</button>
+          <button id="holderNowExportBtn" disabled>Last ned CSV</button>
+        </div>
 
-      <div class="result" id="holderNowSummary"></div>
-      <div class="result" id="holderNowDetails"></div>
-    </section>
+        <div class="result" id="holderNowSummary"></div>
+        <div class="result" id="holderNowDetails"></div>
+      </section>
 
-    <!-- Innehaver – historikk -->
-    <section class="panel" id="holder-history">
-      <h2>Innehaver – historikk</h2>
+      <!-- Innehaver – historikk -->
+      <section class="panel" id="holder-history">
+        <h2>Innehaver – historikk</h2>
 
-      <label for="holderHistInput">Organisasjonsnummer / fødselsnummer</label>
-      <input id="holderHistInput" placeholder="F.eks. 983970400" />
+        <label for="holderHistInput">Organisasjonsnummer / fødselsnummer</label>
+        <input id="holderHistInput" placeholder="F.eks. 983970400" />
 
-      <div class="row">
-        <button id="holderHistBtn">Søk</button>
-        <button id="holderHistDetailsBtn" disabled>Vis detaljer</button>
-        <button id="holderHistExportBtn" disabled>Last ned CSV</button>
-      </div>
+        <div class="row">
+          <button id="holderHistBtn">Søk</button>
+          <button id="holderHistDetailsBtn" disabled>Vis detaljer</button>
+          <button id="holderHistExportBtn" disabled>Last ned CSV</button>
+        </div>
 
-      <div class="result" id="holderHistSummary"></div>
-      <div class="result" id="holderHistDetails"></div>
-    </section>
+        <div class="result" id="holderHistSummary"></div>
+        <div class="result" id="holderHistDetails"></div>
+      </section>
 
-    <!-- Tillatelse – eier -->
-    <section class="panel" id="permit-now">
-      <h2>Tillatelse – eier</h2>
+      <!-- Tillatelse – eier -->
+      <section class="panel" id="permit-now">
+        <h2>Tillatelse – eier</h2>
 
-      <label for="permitNowInput">Tillatelsesnummer</label>
-      <input id="permitNowInput" placeholder="F.eks. F-A-0011 eller F A 0011" />
-      <p class="hint">Du kan søke med bindestrek eller mellomrom.</p>
+        <label for="permitNowInput">Tillatelsesnummer</label>
+        <input id="permitNowInput" placeholder="F.eks. F-A-0011 eller F A 0011" />
+        <p class="hint">Du kan søke med bindestrek eller mellomrom.</p>
 
-      <div class="row">
-        <button id="permitNowBtn">Søk</button>
-        <button id="permitNowExportBtn" disabled>Last ned CSV</button>
-      </div>
+        <div class="row">
+          <button id="permitNowBtn">Søk</button>
+          <button id="permitNowExportBtn" disabled>Last ned CSV</button>
+        </div>
 
-      <div class="result" id="permitNowResult"></div>
+        <div class="result" id="permitNowResult"></div>
 
-      <h3>Detaljer</h3>
-      <p class="hint">Klikk «Vis detaljer» på et resultat for å vise alle felt fra snapshot.</p>
-      <div class="result" id="permitNowDetails"></div>
-    </section>
+        <h3>Detaljer</h3>
+        <p class="hint">Klikk «Vis detaljer» på et resultat for å vise alle felt fra snapshot.</p>
+        <div class="result" id="permitNowDetails"></div>
+      </section>
 
-    <!-- Tillatelse – historikk -->
-    <section class="panel" id="permit-history">
-      <h2>Tillatelse – historikk</h2>
+      <!-- Tillatelse – historikk -->
+      <section class="panel" id="permit-history">
+        <h2>Tillatelse – historikk</h2>
 
-      <label for="permitHistInput">Tillatelsesnummer</label>
-      <input id="permitHistInput" placeholder="F.eks. F-A-0011 eller F A 0011" />
-      <p class="hint">Du kan søke med bindestrek eller mellomrom.</p>
+        <label for="permitHistInput">Tillatelsesnummer</label>
+        <input id="permitHistInput" placeholder="F.eks. F-A-0011 eller F A 0011" />
+        <p class="hint">Du kan søke med bindestrek eller mellomrom.</p>
 
-      <div class="row">
-        <button id="permitHistBtn">Søk</button>
-        <button id="permitHistExportBtn" disabled>Last ned CSV</button>
-      </div>
+        <div class="row">
+          <button id="permitHistBtn">Søk</button>
+          <button id="permitHistExportBtn" disabled>Last ned CSV</button>
+        </div>
 
-      <div class="result" id="permitHistResult"></div>
+        <div class="result" id="permitHistResult"></div>
 
-      <h3>Detaljer</h3>
-      <p class="hint">Klikk «Vis detaljer» på en eierperiode for å vise snapshot.</p>
-      <div class="result" id="permitHistDetails"></div>
-    </section>
+        <h3>Detaljer</h3>
+        <p class="hint">Klikk «Vis detaljer» på en eierperiode for å vise snapshot.</p>
+        <div class="result" id="permitHistDetails"></div>
+      </section>
 
-    <footer class="page-footer">
-      <p id="statusFooter">Laster…</p>
-    </footer>
+      <footer class="page-footer">
+        <p id="statusFooter">Laster…</p>
+      </footer>
+    </div>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
