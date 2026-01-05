@@ -304,7 +304,6 @@ function parseNumberNo(v) {
 
   // Fjern mellomrom (tusenskiller), NBSP, etc.
   s = s.replace(/\s+/g, "");
-
   // Norsk desimal komma -> punktum
   s = s.replace(",", ".");
 
@@ -320,7 +319,6 @@ const nfNo = new Intl.NumberFormat("nb-NO", {
 
 function formatNumberNo(n) {
   if (n == null || !Number.isFinite(n)) return "";
-  // Unngå -0
   if (Object.is(n, -0)) n = 0;
   return nfNo.format(n);
 }
@@ -329,10 +327,8 @@ function normalizeUnit(unitRaw) {
   const u = (unitRaw || "").trim().toUpperCase();
   if (!u) return "";
   if (u === "TN") return "tonn";
-  // hvis du får andre enheter etter hvert, kan du mappe dem her
   return u;
 }
-
 
 // -------------------- Permit external link helpers --------------------
 function permitUrl(permitIdOrDisplay) {
@@ -692,27 +688,6 @@ function getLatestSnapshotRowJsonForHolder(holderId) {
   return rows.length ? rows[0][0] : null;
 }
 
-function getLatestSnapshotRowJsonForPermitHolder(permitId, holderId) {
-  const q1 = `
-    SELECT row_json
-    FROM permit_snapshot
-    WHERE snapshot_date = $d AND permit_id = $p AND holder_id = $h
-    LIMIT 1
-  `;
-  const r1 = runQuery(q1, { $d: latestMeta.snapshot_date, $p: permitId, $h: holderId });
-  if (r1.length) return r1[0][0];
-
-  const q2 = `
-    SELECT row_json
-    FROM permit_snapshot
-    WHERE permit_id = $p AND holder_id = $h
-    ORDER BY snapshot_date DESC
-    LIMIT 1
-  `;
-  const r2 = runQuery(q2, { $p: permitId, $h: holderId });
-  return r2.length ? r2[0][0] : null;
-}
-
 // NY: hent ALLE snapshot-rader (alle arter/lokasjoner) for permit+holder i siste snapshot
 function getLatestSnapshotRowJsonsForPermitHolder(permitId, holderId) {
   const q = `
@@ -724,7 +699,61 @@ function getLatestSnapshotRowJsonsForPermitHolder(permitId, holderId) {
   return rows.map(r => r[0]).filter(Boolean);
 }
 
-// NY: bygg ART-liste + hovedkapasitet (kun maksverdi; typisk laks)
+// NY: hent ALLE snapshot-rader for permit (+holder) for foretrukket dato, ellers nyeste dato
+function getSnapshotRowJsons(permitId, holderId = null, preferDate = null) {
+  // 1) Hvis vi har en preferert dato, prøv den først
+  if (preferDate) {
+    const q1 = holderId
+      ? `SELECT row_json
+         FROM permit_snapshot
+         WHERE snapshot_date=$d AND permit_id=$p AND holder_id=$h`
+      : `SELECT row_json
+         FROM permit_snapshot
+         WHERE snapshot_date=$d AND permit_id=$p`;
+
+    const r1 = runQuery(q1, holderId
+      ? { $d: preferDate, $p: permitId, $h: holderId }
+      : { $d: preferDate, $p: permitId }
+    );
+
+    if (r1.length) return r1.map(r => r[0]).filter(Boolean);
+  }
+
+  // 2) Finn nyeste snapshot_date for permit (+holder hvis valgt)
+  const q2 = holderId
+    ? `SELECT snapshot_date
+       FROM permit_snapshot
+       WHERE permit_id=$p AND holder_id=$h
+       ORDER BY snapshot_date DESC
+       LIMIT 1`
+    : `SELECT snapshot_date
+       FROM permit_snapshot
+       WHERE permit_id=$p
+       ORDER BY snapshot_date DESC
+       LIMIT 1`;
+
+  const d = runQuery(q2, holderId ? { $p: permitId, $h: holderId } : { $p: permitId });
+  const lastDate = d.length ? d[0][0] : null;
+  if (!lastDate) return [];
+
+  // 3) Hent alle rader for den datoen
+  const q3 = holderId
+    ? `SELECT row_json
+       FROM permit_snapshot
+       WHERE snapshot_date=$d AND permit_id=$p AND holder_id=$h`
+    : `SELECT row_json
+       FROM permit_snapshot
+       WHERE snapshot_date=$d AND permit_id=$p`;
+
+  const r3 = runQuery(q3, holderId
+    ? { $d: lastDate, $p: permitId, $h: holderId }
+    : { $d: lastDate, $p: permitId }
+  );
+
+  return r3.map(r => r[0]).filter(Boolean);
+}
+
+// NY: bygg ART-liste + hovedkapasitet (maksverdi av TILL_KAP)
 function summarizePermitSnapshotRowsMainCapacity(rowJsons) {
   const arts = new Set();
   let unit = "";
@@ -739,10 +768,7 @@ function summarizePermitSnapshotRowsMainCapacity(rowJsons) {
     if (!unit) unit = normalizeUnit(tryExtract(obj, "TILL_ENHET"));
 
     const kap = parseNumberNo(tryExtract(obj, "TILL_KAP"));
-    if (kap != null) {
-      if (mainCap == null) mainCap = kap;
-      else mainCap = Math.max(mainCap, kap);
-    }
+    if (kap != null) mainCap = (mainCap == null) ? kap : Math.max(mainCap, kap);
   }
 
   const artStr = [...arts].join(", ");
@@ -755,8 +781,8 @@ function summarizePermitSnapshotRowsMainCapacity(rowJsons) {
   return { artStr, capStr };
 }
 
-
 function getSnapshotRowJson(permitId, holderId = null, preferDate = null) {
+  // (Beholdes for bakoverkompat / hvis du vil slå opp én rad et sted)
   if (preferDate) {
     const q1 = holderId
       ? `SELECT row_json FROM permit_snapshot WHERE snapshot_date=$d AND permit_id=$p AND holder_id=$h LIMIT 1`
@@ -873,6 +899,98 @@ function renderHolderDetailsTable(containerId, holderId, permitIds) {
 
   renderDetailsToolbarAndTable(containerId);
   return { columns, rows };
+}
+
+// -------------------- Permit details table (for "Vis detaljer" in permit views) --------------------
+function renderPermitSnapshotDetails(containerId, permitId, holderId = null, preferDate = null) {
+  const el = document.getElementById(containerId);
+  if (!el) return { columns: [], rows: [] };
+
+  const rowJsons = getSnapshotRowJsons(permitId, holderId, preferDate);
+  if (!rowJsons.length) {
+    el.innerHTML = "<p>Fant ingen snapshot-rader for denne kombinasjonen.</p>";
+    return { columns: [], rows: [] };
+  }
+
+  // Aggregert toppinfo (alle arter + hovedkapasitet)
+  const { artStr, capStr } = summarizePermitSnapshotRowsMainCapacity(rowJsons);
+  const permitDisplay = formatPermitIdForDisplay(permitId);
+
+  // Bygg en detalj-tabell med én linje per snapshot-rad (typisk per art)
+  const objs = rowJsons.map(rj => JSON.parse(rj));
+
+  // Velg “nyttige” kolonner som ofte finnes i row_json
+  const preferredCols = [
+    "ART",
+    "TILL_KAP",
+    "TILL_ENHET",
+    "FORMÅL",
+    "PRODUKSJONSFORM",
+    "TILDELINGSTIDSPUNKT",
+    "PROD_OMR",
+    "VANNMILJØ",
+    "KOMMUNE",
+    "LOK_NR",
+    "LOK_NAVN"
+  ];
+
+  const present = new Set();
+  for (const o of objs) {
+    for (const k of Object.keys(o || {})) present.add(k);
+  }
+
+  const columns = preferredCols.filter(c => present.has(c));
+  // Fallback hvis uventet: vis i det minste ART hvis den finnes
+  const safeColumns = columns.length ? columns : (present.has("ART") ? ["ART"] : ["(rad)"]);
+
+  const rows = objs.map(o => safeColumns.map(c => {
+    if (c === "(rad)") return JSON.stringify(o);
+    if (c === "TILL_ENHET") return normalizeUnit(tryExtract(o, c));
+    if (c === "TILL_KAP") {
+      const n = parseNumberNo(tryExtract(o, c));
+      return (n == null) ? "" : formatNumberNo(n);
+    }
+    return tryExtract(o, c);
+  }));
+
+  // Vi vil vise et aggregert “header”-område + tabell med toolbar.
+  // renderDetailsToolbarAndTable renderer hele containeren, så vi lager en wrapper:
+  el.innerHTML = `
+    <div class="details-area">
+      <h4>Detaljer for ${escapeHtml(permitDisplay)}</h4>
+      <div class="details-kv">
+        <div><b>Tillatelse:</b> ${permitLinkHtml(permitId, permitDisplay)}</div>
+        ${holderId ? `<div><b>Innehaver:</b> <code>${escapeHtml(holderId)}</code></div>` : ""}
+        ${preferDate ? `<div><b>Dato:</b> <code>${escapeHtml(preferDate)}</code></div>` : ""}
+        <div><b>Arter:</b> ${escapeHtml(artStr || "")}</div>
+        <div><b>Hovedkapasitet:</b> ${escapeHtml(capStr || "")}</div>
+      </div>
+      <div id="${escapeHtml(containerId)}__table"></div>
+    </div>
+  `;
+
+  // Render selve tabellen inn i under-container, med samme toolbar-funksjonalitet
+  const tableId = `${containerId}__table`;
+
+  detailsTableState[tableId] = {
+    columns: safeColumns,
+    baseRows: rows,
+    text: "",
+    filters: {},
+    sortCol: null,
+    sortDir: "asc",
+    hiddenCols: new Set()
+  };
+
+  // Vi må sikre at under-container finnes
+  const tableEl = document.getElementById(tableId);
+  if (tableEl) {
+    // midlertidig: gi under-containeren et "ekte" element å jobbe med
+    // ved å sette et ID som renderDetailsToolbarAndTable kan finne.
+    renderDetailsToolbarAndTable(tableId);
+  }
+
+  return { columns: safeColumns, rows };
 }
 
 // -------------------- SØK: Innehaver – gjeldende --------------------
@@ -1049,8 +1167,9 @@ document.getElementById("permitNowBtn").addEventListener("click", () => {
     return;
   }
 
-  const rowJson = getSnapshotRowJson(permitId, null, latestMeta.snapshot_date);
-  if (!rowJson) {
+  // NY: hent alle snapshot-rader (alle arter) for siste snapshot
+  const rowJsons = getSnapshotRowJsons(permitId, null, latestMeta.snapshot_date);
+  if (!rowJsons.length) {
     document.getElementById("permitNowResult").innerHTML =
       `<p>Fant ingen tillatelse med dette nummeret: <code>${escapeHtml(raw)}</code></p>`;
     document.getElementById("permitNowDetails").innerHTML = "";
@@ -1059,7 +1178,9 @@ document.getElementById("permitNowBtn").addEventListener("click", () => {
     updateUrlFromUi();
     return;
   }
-  const obj = JSON.parse(rowJson);
+
+  const firstObj = JSON.parse(rowJsons[0]);
+  const { artStr, capStr } = summarizePermitSnapshotRowsMainCapacity(rowJsons);
 
   const qOwner = `
     SELECT holder_id, valid_from
@@ -1074,7 +1195,9 @@ document.getElementById("permitNowBtn").addEventListener("click", () => {
 
   const summary = {
     "TILL_NR": permitDisplay,
-    "NAVN": tryExtract(obj, "NAVN") || "(mangler)",
+    "NAVN": tryExtract(firstObj, "NAVN") || "(mangler)",
+    "ART": artStr,
+    "Hovedkapasitet": capStr,
     "Snapshot": latestMeta.snapshot_date,
     "Eier": eier ? `${eier} (fra ${eierFra})` : "(ikke funnet)"
   };
@@ -1086,8 +1209,8 @@ document.getElementById("permitNowBtn").addEventListener("click", () => {
 
   exportState.permitNow = {
     filename: `tillatelse_eier_${permitDisplay}_${latestMeta.snapshot_date}.csv`,
-    columns: ["TILL_NR", "HOLDER_ID", "VALID_FROM", "SNAPSHOT_DATE"],
-    rows: [[permitDisplay, eier || "", eierFra || "", latestMeta.snapshot_date]]
+    columns: ["TILL_NR", "ART", "HOVEDKAPASITET", "HOLDER_ID", "VALID_FROM", "SNAPSHOT_DATE"],
+    rows: [[permitDisplay, artStr || "", capStr || "", eier || "", eierFra || "", latestMeta.snapshot_date]]
   };
   document.getElementById("permitNowExportBtn").disabled = false;
 
@@ -1131,14 +1254,27 @@ document.getElementById("permitHistBtn").addEventListener("click", () => {
   }
 
   const cards = rows.map(([holderId, from, to]) => {
-    const rowJson = getSnapshotRowJson(permitId, holderId, from);
+    // NY: hent ALLE rader på "from"-dato for å få alle arter + hovedkapasitet for perioden
+    const rowJsons = getSnapshotRowJsons(permitId, holderId, from);
+
     let navn = "";
-    if (rowJson) navn = tryExtract(JSON.parse(rowJson), "NAVN");
+    let artStr = "";
+    let capStr = "";
+
+    if (rowJsons.length) {
+      const firstObj = JSON.parse(rowJsons[0]);
+      navn = tryExtract(firstObj, "NAVN");
+      const s = summarizePermitSnapshotRowsMainCapacity(rowJsons);
+      artStr = s.artStr;
+      capStr = s.capStr;
+    }
 
     const summary = {
       "TILL_NR": permitDisplay,
       "ORG.NR/PERS.NR": holderId,
       "NAVN": navn || "(mangler)",
+      "ART": artStr,
+      "Hovedkapasitet": capStr,
       "Fra": from,
       "Til": to
     };
@@ -1168,18 +1304,9 @@ document.addEventListener("click", (e) => {
   const holderId = (btn.getAttribute("data-holder") || "").trim() || null;
   const date = (btn.getAttribute("data-date") || "").trim() || null;
 
-  const rowJson = getSnapshotRowJson(permitId, holderId, date);
-  if (!rowJson) {
-    const t = document.getElementById(targetId);
-    if (t) t.innerHTML = "<p>Fant ingen snapshot-rad for denne kombinasjonen.</p>";
-    return;
-  }
-
-  const permitDisplay = formatPermitIdForDisplay(permitId);
-  const detailsObj = normalizeDetailsObjectForDisplay(JSON.parse(rowJson));
-
-  const t = document.getElementById(targetId);
-  if (t) t.innerHTML = renderKeyValueTableHtml(detailsObj, `Vis detaljer for ${permitDisplay}`);
+  // NY: vis detaljer som en tabell med alle snapshot-rader (alle arter),
+  // med aggregert “Arter” + “Hovedkapasitet” øverst.
+  renderPermitSnapshotDetails(targetId, permitId, holderId, date);
 });
 
 // -------------------- CSV buttons --------------------
