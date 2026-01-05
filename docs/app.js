@@ -297,6 +297,43 @@ function tryExtract(obj, key) {
   return v == null ? "" : String(v).trim();
 }
 
+function parseNumberNo(v) {
+  if (v == null) return null;
+  let s = String(v).trim();
+  if (!s) return null;
+
+  // Fjern mellomrom (tusenskiller), NBSP, etc.
+  s = s.replace(/\s+/g, "");
+
+  // Norsk desimal komma -> punktum
+  s = s.replace(",", ".");
+
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+const nfNo = new Intl.NumberFormat("nb-NO", {
+  useGrouping: true,
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2
+});
+
+function formatNumberNo(n) {
+  if (n == null || !Number.isFinite(n)) return "";
+  // Unngå -0
+  if (Object.is(n, -0)) n = 0;
+  return nfNo.format(n);
+}
+
+function normalizeUnit(unitRaw) {
+  const u = (unitRaw || "").trim().toUpperCase();
+  if (!u) return "";
+  if (u === "TN") return "tonn";
+  // hvis du får andre enheter etter hvert, kan du mappe dem her
+  return u;
+}
+
+
 // -------------------- Permit external link helpers --------------------
 function permitUrl(permitIdOrDisplay) {
   const display = formatPermitIdForDisplay(permitIdOrDisplay); // ensure F-A-0011
@@ -676,6 +713,49 @@ function getLatestSnapshotRowJsonForPermitHolder(permitId, holderId) {
   return r2.length ? r2[0][0] : null;
 }
 
+// NY: hent ALLE snapshot-rader (alle arter/lokasjoner) for permit+holder i siste snapshot
+function getLatestSnapshotRowJsonsForPermitHolder(permitId, holderId) {
+  const q = `
+    SELECT row_json
+    FROM permit_snapshot
+    WHERE snapshot_date = $d AND permit_id = $p AND holder_id = $h
+  `;
+  const rows = runQuery(q, { $d: latestMeta.snapshot_date, $p: permitId, $h: holderId });
+  return rows.map(r => r[0]).filter(Boolean);
+}
+
+// NY: bygg ART-liste + hovedkapasitet (kun maksverdi; typisk laks)
+function summarizePermitSnapshotRowsMainCapacity(rowJsons) {
+  const arts = new Set();
+  let unit = "";
+  let mainCap = null;
+
+  for (const rj of rowJsons) {
+    const obj = JSON.parse(rj);
+
+    const art = tryExtract(obj, "ART");
+    if (art) arts.add(art);
+
+    if (!unit) unit = normalizeUnit(tryExtract(obj, "TILL_ENHET"));
+
+    const kap = parseNumberNo(tryExtract(obj, "TILL_KAP"));
+    if (kap != null) {
+      if (mainCap == null) mainCap = kap;
+      else mainCap = Math.max(mainCap, kap);
+    }
+  }
+
+  const artStr = [...arts].join(", ");
+
+  // Vis tomt hvis mangler/0
+  const capStr = (mainCap == null || mainCap <= 0)
+    ? ""
+    : `${formatNumberNo(mainCap)} ${unit}`.trim();
+
+  return { artStr, capStr };
+}
+
+
 function getSnapshotRowJson(permitId, holderId = null, preferDate = null) {
   if (preferDate) {
     const q1 = holderId
@@ -738,9 +818,10 @@ function renderHolderDetailsTable(containerId, holderId, permitIds) {
 
   const rows = [];
   for (const permitId of permitIds) {
-    const rowJson = getLatestSnapshotRowJsonForPermitHolder(permitId, holderId);
+    // NY: hent alle snapshot-rader i stedet for LIMIT 1
+    const rowJsons = getLatestSnapshotRowJsonsForPermitHolder(permitId, holderId);
 
-    if (!rowJson) {
+    if (!rowJsons.length) {
       rows.push([
         getPermitStatusForHolder(holderId, permitId),
         { __html: permitLinkHtml(permitId) },
@@ -754,20 +835,18 @@ function renderHolderDetailsTable(containerId, holderId, permitIds) {
       continue;
     }
 
-    const obj = JSON.parse(rowJson);
-    const kap = tryExtract(obj, "TILL_KAP");
-    const enh = tryExtract(obj, "TILL_ENHET");
-    const kapStr = [kap, enh].filter(Boolean).join(" ").trim();
+    const firstObj = JSON.parse(rowJsons[0]); // stabile felt
+    const { artStr, capStr } = summarizePermitSnapshotRowsMainCapacity(rowJsons);
 
     rows.push([
       getPermitStatusForHolder(holderId, permitId),
       { __html: permitLinkHtml(permitId) }, // 👈 klikkbar lenke
-      tryExtract(obj, "ART"),
-      tryExtract(obj, "FORMÅL"),
-      tryExtract(obj, "PRODUKSJONSFORM"),
-      tryExtract(obj, "TILDELINGSTIDSPUNKT"),
-      kapStr,
-      tryExtract(obj, "PROD_OMR")
+      artStr,
+      tryExtract(firstObj, "FORMÅL"),
+      tryExtract(firstObj, "PRODUKSJONSFORM"),
+      tryExtract(firstObj, "TILDELINGSTIDSPUNKT"),
+      capStr,
+      tryExtract(firstObj, "PROD_OMR")
     ]);
   }
 
@@ -782,19 +861,18 @@ function renderHolderDetailsTable(containerId, holderId, permitIds) {
   });
 
   // Lagre state for sortering/filtrering/kolonner og render med toolbar
-detailsTableState[containerId] = {
-  columns,
-  baseRows: rows,          // original
-  text: "",
-  filters: {},             // STATUS/ART/FORMÅL/PRODUKSJONSFORM
-  sortCol: null,
-  sortDir: "asc",
-  hiddenCols: new Set()    // tom = vis alt
-};
+  detailsTableState[containerId] = {
+    columns,
+    baseRows: rows,          // original
+    text: "",
+    filters: {},             // STATUS/ART/FORMÅL/PRODUKSJONSFORM
+    sortCol: null,
+    sortDir: "asc",
+    hiddenCols: new Set()    // tom = vis alt
+  };
 
-renderDetailsToolbarAndTable(containerId);
-return { columns, rows };
-
+  renderDetailsToolbarAndTable(containerId);
+  return { columns, rows };
 }
 
 // -------------------- SØK: Innehaver – gjeldende --------------------
@@ -867,15 +945,9 @@ document.getElementById("holderNowDetailsBtn").addEventListener("click", () => {
 
   const { columns, rows } = renderHolderDetailsTable("holderNowDetails", holderId, holderNowPermitIds);
 
-  // For CSV vil vi ha “tekst” i TILL_NR-kolonnen:
-  const csvRows = rows.map(r => {
-    const out = [...r];
-    out[1] = (out[1] && typeof out[1] === "object" && out[1].__html) ? formatPermitIdForDisplay(holderNowPermitIds[0] || "") : out[1];
-    return out;
-  });
-
+  // CSV: konverter celler til tekst (inkl. HTML-celler som TILL_NR-lenke)
   exportState.holderNow.columns = columns;
-  exportState.holderNow.rows = rows.map(r => r.map(cell => (cell && typeof cell === "object" && cell.__html) ? "" : cell));
+  exportState.holderNow.rows = rows.map(r => r.map(cellToText));
   document.getElementById("holderNowExportBtn").disabled = rows.length === 0;
 
   updateUrlFromUi();
@@ -950,8 +1022,10 @@ document.getElementById("holderHistDetailsBtn").addEventListener("click", () => 
   if (!holderId) { clearHolderHistUI(); updateUrlFromUi(); return; }
 
   const { columns, rows } = renderHolderDetailsTable("holderHistDetails", holderId, holderHistPermitIds);
+
+  // CSV: konverter celler til tekst (inkl. HTML-celler som TILL_NR-lenke)
   exportState.holderHist.columns = columns;
-  exportState.holderHist.rows = rows.map(r => r.map(cell => (cell && typeof cell === "object" && cell.__html) ? "" : cell));
+  exportState.holderHist.rows = rows.map(r => r.map(cellToText));
   document.getElementById("holderHistExportBtn").disabled = rows.length === 0;
 
   updateUrlFromUi();
