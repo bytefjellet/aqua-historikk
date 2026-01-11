@@ -1,0 +1,42 @@
+
+# config/filter.yml
+# Her kan du ha flere navngitte filtre etter hvert.
+filters:
+  - name: "Grunnrenteskatteplikt"
+    # Alle regler må stemme (AND)
+    rules:
+    
+    # 1) Vannmiljø må være saltvann
+    - col: "VANNMILJØ"
+      include_any:
+          - "SALT"
+
+    # 2) Lok_plass må være i sjø
+    - col: "LOK_PLASS"
+      include_any:
+          - "SJØ"
+
+    # 3) Art må være laks/ørret/regnbueørret)
+    - col: "ART"
+      include_any:
+        - "Laks"
+        - "Ørret"
+        - "Regnbueørret"
+        
+    # 4) Formål må være kommersiell
+    - col: "FORMÅL"
+      include_any:
+        - "KOMMERSIELL"
+
+    # 5) Produksjonsform må væære
+    - col: "PRODUKSJONSFORM"
+      include_any:
+        - "MATFISK"
+        - "MATFISK - (5% MTB ØKNING)"
+        - "MATFISK -GRMNN A"
+        - "MATFISK -GRØNN A(5% MTB ØKNING)"
+        - "MATFISK -GRØNN B"
+        - "MATFISK -GRØNN C"
+        - "MATFISK -GRØNN KONVERTERT"
+        - "ØKOLOGISK MATFISK"
+      

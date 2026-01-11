@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build history (fixtures) + validate DB
+        env:
+          AQUA_DB_PATH: /tmp/aqua.sqlite
+          AQUA_SNAPSHOT_DIR: data/snapshots/fixtures
+        run: |
+          python - <<'PY'
+          from src.db import connect, init_db
+          from src.build_history import build_from_folder
+
+          # Bygg fra fixtures uten transfers for stabil CI
+          conn = connect()
+          init_db(conn)
+          build_from_folder(
+              run_preflight_first=True,
+              fail_on_warn=False,
+              strict_date_validation=True,
+              enable_transfers=False,
+          )
+          PY
+
+          python -m src.validate_db

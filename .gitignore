@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Mac / editor
+.DS_Store
+.vscode/
+
+# SQLite
+db/*.sqlite
+db/*.sqlite-wal
+db/*.sqlite-shm
+db/*.db
+db/*.backup.sqlite
+
+# Data snapshots (ofte store)
+data/snapshots/*.csv
+
+# Hvis du vil beholde en liten CI-fixture i repo:
+!data/snapshots/.gitkeep
+!data/snapshots/fixtures/**
