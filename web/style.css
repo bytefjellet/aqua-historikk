@@ -26,3 +26,8 @@ th.sort-desc::after { content: " ▼"; color: var(--muted); font-size: 11px; }
   #nowSearch { min-width: 0; width: 100%; }
   .input { min-width: 0; width: 100%; }
 }
+#permitHistoryTable td:nth-child(3),
+#permitHistoryTable th:nth-child(3) {
+  width: 220px;
+  white-space: nowrap;
+}

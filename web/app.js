@@ -199,31 +199,52 @@ function renderPermit(permitKey) {
   `;
 
   const hist = execAll(`
-    SELECT
-      valid_from,
-      COALESCE(NULLIF(valid_to,''), 'Aktiv') AS valid_to,
-      owner_name,
-      owner_orgnr,
-      owner_identity
-    FROM ownership_history
-    WHERE permit_key = ?
-    ORDER BY date(valid_from), id;
-  `, [permitKey]);
+  SELECT
+    valid_from,
+    valid_to,
+    COALESCE(NULLIF(valid_to,''), 'Aktiv') AS valid_to_label,
+    owner_name,
+    owner_orgnr,
+    owner_identity,
+    tidsbegrenset
+  FROM ownership_history
+  WHERE permit_key = ?
+  ORDER BY date(valid_from), id;
+`, [permitKey]);
 
-  const tbody = $("permitHistoryTable").querySelector("tbody");
-  tbody.innerHTML = "";
+const tbody = $("permitHistoryTable").querySelector("tbody");
+tbody.innerHTML = "";
 
-  for (const r of hist) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${escapeHtml(r.valid_from)}</td>
-      <td>${escapeHtml(r.valid_to)}</td>
-      <td>${escapeHtml(r.owner_name)}</td>
-      <td><a class="link" href="#/owner/${encodeURIComponent(r.owner_identity)}">${escapeHtml(r.owner_identity)}</a></td>
-      <td>${escapeHtml(r.owner_orgnr || "")}</td>
-    `;
-    tbody.appendChild(tr);
+for (let i = 0; i < hist.length; i++) {
+  const r = hist[i];
+  const next = hist[i + 1] || null;
+
+  const validTo = (r.valid_to && String(r.valid_to).trim()) ? String(r.valid_to).trim() : null;
+  const tids = (r.tidsbegrenset && String(r.tidsbegrenset).trim()) ? String(r.tidsbegrenset).trim() : null;
+
+  let reason = "";
+  if (!validTo) {
+    reason = ""; // aktiv periode
+  } else if (tids && tids.slice(0, 10) === validTo.slice(0, 10)) {
+    reason = `Utløpt (tidsbegrenset ${tids.slice(0, 10)})`;
+  } else if (next) {
+    reason = "Overført / ny periode";
+  } else {
+    reason = "Avsluttet";
   }
+
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td>${escapeHtml(r.valid_from)}</td>
+    <td>${escapeHtml(r.valid_to_label)}</td>
+    <td class="muted">${escapeHtml(reason)}</td>
+    <td>${escapeHtml(r.owner_name)}</td>
+    <td><a class="link" href="#/owner/${encodeURIComponent(r.owner_identity)}">${escapeHtml(r.owner_identity)}</a></td>
+    <td>${escapeHtml(r.owner_orgnr || "")}</td>
+  `;
+  tbody.appendChild(tr);
+}
+
 }
 
 // --- OWNER view ---

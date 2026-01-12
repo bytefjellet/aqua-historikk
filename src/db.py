@@ -97,6 +97,7 @@ def init_db(conn: sqlite3.Connection) -> None:
         owner_identity TEXT NOT NULL,     -- ALLTID satt (orgnr eller PN:<name>)
         valid_from TEXT NOT NULL,
         valid_to TEXT,
+        tidsbegrenset TEXT                -- NY
         registered_from TEXT,             -- faktisk registreringsdato (dagbokdato/ajour)
         registered_to TEXT,               -- valgfritt
         transfer_id INTEGER               -- peker til license_transfers.id (valgfritt)
@@ -108,6 +109,8 @@ def init_db(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "ownership_history", "registered_from", "TEXT")
     _add_column_if_missing(conn, "ownership_history", "registered_to", "TEXT")
     _add_column_if_missing(conn, "ownership_history", "transfer_id", "INTEGER")
+    _add_column_if_missing(conn, "ownership_history", "tidsbegrenset", "TEXT")
+
 
     # Backfill: owner_identity må aldri være NULL i praksis (validering og unikhet blir rare ellers)
     conn.execute("""

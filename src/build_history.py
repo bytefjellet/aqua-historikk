@@ -10,11 +10,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from src.grunnrente import is_grunnrente_pliktig
-from src.config import SNAPSHOT_DIR, KEY_COL, OWNER_ORG_COL, OWNER_NAME_COL, CSV_ENCODING
+from src.config import CSV_ENCODING, KEY_COL, OWNER_NAME_COL, OWNER_ORG_COL, SNAPSHOT_DIR
 from src.db import connect, init_db
+from src.grunnrente import is_grunnrente_pliktig
 from src.ingest import load_snapshot_csv
-
 
 # ----------------------------
 # Dato-validering (første linje)
@@ -273,8 +272,8 @@ def print_preflight_report(result: PreflightResult) -> None:
 # Hovedlogikk: bygg DB fra snapshots
 # ----------------------------
 
-TodayTuple = Tuple[str, str, str, str]
-# (owner_orgnr, owner_name, owner_identity, row_json)
+TodayTuple = Tuple[str, str, str, str, Optional[str]]
+# (owner_orgnr, owner_name, owner_identity, row_json, tidsbegrenset)
 
 
 def apply_snapshot(
@@ -339,8 +338,11 @@ def apply_snapshot(
         owner_identity = make_owner_identity(owner_org, owner_name)
         row_json = canonical_json(r)
 
+        # NY: tidsbegrenset fra CSV-kolonnen TIDSBEGRENSET (dato i DD-MM-YYYY)
+        tidsbegrenset = parse_ddmmyyyy(as_text(r.get("TIDSBEGRENSET")))
+
         best_key[permit_key] = k
-        today[permit_key] = (owner_org, owner_name, owner_identity, row_json)
+        today[permit_key] = (owner_org, owner_name, owner_identity, row_json, tidsbegrenset)
 
     today_keys = set(today.keys())
 
@@ -361,7 +363,7 @@ def apply_snapshot(
     snapshots_written = 0
     snapshots_skipped = 0
 
-    for permit_key, (_org, _name, _ident, row_json) in today.items():
+    for permit_key, (_org, _name, _ident, row_json, _tids) in today.items():
         row_hash = sha256_text(row_json)
         prev_hash = latest_snapshot_hash(conn, permit_key)
 
@@ -387,28 +389,50 @@ def apply_snapshot(
             UPDATE ownership_history
             SET valid_to = ?
             WHERE permit_key = ?
-            AND (valid_to IS NULL OR valid_to = '')
-            AND date(valid_from) < date(?);
+              AND (valid_to IS NULL OR valid_to = '')
+              AND date(valid_from) < date(?);
             """,
             (close_date, permit_key, snapshot_date),
-        )   
+        )
 
-
-    def open_new_ownership(permit_key: str, owner_org: str, owner_name: str, owner_identity: str) -> None:
+    def open_new_ownership(
+        permit_key: str,
+        owner_org: str,
+        owner_name: str,
+        owner_identity: str,
+        tidsbegrenset: Optional[str],
+    ) -> None:
         conn.execute(
             """
             INSERT OR IGNORE INTO ownership_history(
-                permit_key, owner_orgnr, owner_name, owner_identity, valid_from, valid_to
+                permit_key, owner_orgnr, owner_name, owner_identity, valid_from, valid_to, tidsbegrenset
             )
-            VALUES (?, ?, ?, ?, ?, NULL);
+            VALUES (?, ?, ?, ?, ?, NULL, ?);
             """,
-            (permit_key, owner_org or None, owner_name or None, owner_identity, snapshot_date),
+            (permit_key, owner_org or None, owner_name or None, owner_identity, snapshot_date, tidsbegrenset),
+        )
+
+    def update_open_tidsbegrenset(permit_key: str, tidsbegrenset: Optional[str]) -> None:
+        """
+        Hvis tidsbegrenset dukker opp i et senere snapshot, vil vi fylle den inn på den åpne perioden
+        (uten å overskrive hvis den allerede er satt).
+        """
+        if not tidsbegrenset:
+            return
+        conn.execute(
+            """
+            UPDATE ownership_history
+            SET tidsbegrenset = COALESCE(tidsbegrenset, ?)
+            WHERE permit_key = ?
+              AND (valid_to IS NULL OR valid_to = '');
+            """,
+            (tidsbegrenset, permit_key),
         )
 
     # Nye tillatelser => åpne eierperiode
     for permit_key in sorted(new_keys):
-        owner_org, owner_name, owner_identity, _row_json = today[permit_key]
-        open_new_ownership(permit_key, owner_org, owner_name, owner_identity)
+        owner_org, owner_name, owner_identity, _row_json, tidsbegrenset = today[permit_key]
+        open_new_ownership(permit_key, owner_org, owner_name, owner_identity, tidsbegrenset)
 
     # Fjernede tillatelser => lukk åpen periode
     for permit_key in sorted(removed_keys):
@@ -418,13 +442,13 @@ def apply_snapshot(
     owner_changes = 0
 
     for permit_key in sorted(common_keys):
-        prev_owner_org, _prev_owner_name, prev_owner_identity = current[permit_key]
-        owner_org, owner_name, owner_identity, _row_json = today[permit_key]
+        _prev_owner_org, _prev_owner_name, prev_owner_identity = current[permit_key]
+        owner_org, owner_name, owner_identity, _row_json, tidsbegrenset = today[permit_key]
 
         if owner_identity != prev_owner_identity:
             owner_changes += 1
             close_open_ownership(permit_key)
-            open_new_ownership(permit_key, owner_org, owner_name, owner_identity)
+            open_new_ownership(permit_key, owner_org, owner_name, owner_identity, tidsbegrenset)
 
             # Transfers-integrasjon (kun når orgnr finnes)
             if enable_transfers and as_text(owner_org):
@@ -448,12 +472,22 @@ def apply_snapshot(
                 except Exception as e:
                     print(f"ADVARSEL: Transfers-integrasjon feilet for {permit_key}: {e}")
 
+        else:
+            # Samme eier som i går: men vi vil fortsatt kunne backfille tidsbegrenset om det dukker opp nå
+            update_open_tidsbegrenset(permit_key, tidsbegrenset)
+
+    # Også: for helt nye tillatelser kan tidsbegrenset komme på samme dag (eller senere),
+    # så vi gjør en generell pass for alle "today_keys" (trygt, og gjør ingenting når tomt).
+    for permit_key in sorted(today_keys):
+        _owner_org, _owner_name, _owner_identity, _row_json, tidsbegrenset = today[permit_key]
+        update_open_tidsbegrenset(permit_key, tidsbegrenset)
+
     # 6) Oppdater permit_current
     for permit_key in sorted(removed_keys):
         conn.execute("DELETE FROM permit_current WHERE permit_key = ?;", (permit_key,))
 
     for permit_key in sorted(today_keys):
-        owner_org, owner_name, owner_identity, row_json = today[permit_key]
+        owner_org, owner_name, owner_identity, row_json, _tidsbegrenset = today[permit_key]
 
         try:
             row_dict = json.loads(row_json) if row_json else {}
