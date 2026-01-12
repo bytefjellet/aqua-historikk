@@ -132,23 +132,24 @@ function renderNow() {
     const permit = escapeHtml(r.permit_key);
     const ownerName = escapeHtml(r.owner_name);
     const ownerIdent = escapeHtml(r.owner_identity);
-    const snap = escapeHtml(r.snapshot_date);
-    const grunn = (Number(r.grunnrente_pliktig) === 1) ? "1" : "0";
+    
+    const orgnrOrIdent = (r.owner_orgnr && String(r.owner_orgnr).trim())
+      ? String(r.owner_orgnr).trim()
+      : String(r.owner_identity ?? "");
 
     tr.innerHTML = `
       <td><a class="link" href="#/permit/${encodeURIComponent(r.permit_key)}">${permit}</a></td>
       <td>${ownerName}</td>
-      <td><a class="link" href="#/owner/${encodeURIComponent(r.owner_identity)}">${ownerIdent}</a></td>
-      <td>${snap}</td>
-      <td>${grunn}</td>
+      <td><a class="link" href="#/owner/${encodeURIComponent(r.owner_identity)}">${escapeHtml(orgnrOrIdent)}</a></td>
     `;
+
     tbody.appendChild(tr);
   }
 
   if (filtered.length > MAX) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td colspan="5" class="muted">
+      <td colspan="3" class="muted">
         Viser kun de første ${MAX} radene. Begrens søket for å se resten.
       </td>
     `;
@@ -350,7 +351,6 @@ function wireEvents() {
 
   $("nowSearch").addEventListener("input", () => renderNow());
   $("onlyGrunnrente").addEventListener("change", () => renderNow());
-  $("reloadBtn").addEventListener("click", () => loadDatabase().catch(showError));
 
   $("permitGo").addEventListener("click", () => {
     const key = $("permitInput").value.trim();

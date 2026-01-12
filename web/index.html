@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Akvakultur – uttrekk og historikk</title>
+  <title>Akvakulturregisteret – uttrekk og historikk</title>
   <link rel="stylesheet" href="style.css" />
 
   <!-- sql.js (WASM) -->
@@ -14,7 +14,7 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <div class="title">Akvakultur – historikk</div>
+      <div class="title">Akvakulturregisteret – historikk</div>
       <div class="subtitle">SQLite i nettleseren (sql.js) • GitHub Pages</div>
     </div>
 
@@ -36,12 +36,11 @@
       <h2>Nå-status</h2>
 
       <div class="controls">
-        <input id="nowSearch" class="input" placeholder="Søk: tillatelse (permit_key) eller eier (navn/identity) …" />
+        <input id="nowSearch" class="input" placeholder="Søk: orgn.nr eller tillatelsesnr. …" />
         <label class="checkbox">
           <input id="onlyGrunnrente" type="checkbox" />
           Kun grunnrentepliktig
         </label>
-        <button id="reloadBtn" class="button" type="button">Last DB på nytt</button>
       </div>
 
       <div id="nowSummary" class="muted"></div>
@@ -50,11 +49,9 @@
         <table class="table" id="nowTable">
           <thead>
             <tr>
-              <th>Tillatelse</th>
-              <th>Eier</th>
-              <th>Owner identity</th>
-              <th>Snapshot</th>
-              <th>Grunnrente</th>
+              <th>Tillatelsesnr.</th>
+              <th>Innehaver</th>
+              <th>Org.nr.</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -140,7 +137,7 @@
 
   <footer class="footer">
     <span class="muted">
-      Tips: klikk på en tillatelse eller eier for å åpne historikk. Alt kjøres lokalt i nettleseren.
+      Kilde: Fiskeridirektoratet
     </span>
   </footer>
 </body>
