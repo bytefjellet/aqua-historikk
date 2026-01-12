@@ -19,6 +19,7 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 echo "==> $(ts) Runner start"
 cd "$PROJECT_ROOT"
 
+# ---- Lock (macOS-safe) ----
 if ! /bin/mkdir "$LOCK_DIR" 2>/dev/null; then
   echo "!! $(ts) Another run is already running. Exiting."
   exit 0
@@ -30,6 +31,20 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# ---- Run the actual job ----
 "$RUN_SCRIPT"
+
+# ---- Auto-commit & push (ONLY if DB changed) ----
+if [[ -n "$(git status --porcelain web/data/aqua.sqlite)" ]]; then
+  echo "==> $(ts) Database changed – committing"
+
+  git add web/data/aqua.sqlite
+  git commit -m "Update aqua.sqlite ($( /bin/date +%Y-%m-%d ))"
+
+  echo "==> $(ts) Pushing to origin"
+  git push
+else
+  echo "==> $(ts) No database changes – skipping git commit"
+fi
 
 echo "==> $(ts) Runner done"

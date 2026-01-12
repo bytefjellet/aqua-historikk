@@ -25,3 +25,10 @@ data/snapshots/*.csv
 # Hvis du vil beholde en liten CI-fixture i repo:
 !data/snapshots/.gitkeep
 !data/snapshots/fixtures/**
+
+# Logs
+logs/
+
+# macOS
+.DS_Store
+
