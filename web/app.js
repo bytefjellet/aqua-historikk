@@ -101,7 +101,7 @@ function renderNow() {
   const only = $("onlyGrunnrente").checked;
 
   const baseSql = `
-    SELECT permit_key, owner_name, owner_identity, snapshot_date, grunnrente_pliktig
+    SELECT permit_key, owner_name, owner_identity, owner_orgnr
     FROM permit_current
     ${only ? "WHERE grunnrente_pliktig = 1" : ""}
     ORDER BY permit_key
