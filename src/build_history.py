@@ -226,7 +226,7 @@ def preflight(snapshot_dir: Path = SNAPSHOT_DIR, fail_on_warn: bool = False) -> 
         if missing:
             issues.append(PreflightIssue("ERROR", p.name, f"Mangler påkrevde kolonner: {sorted(missing)}"))
 
-        # WARN om duplikater per KEY_COL (forventet, men bra å se)
+        # WARN om duplikater per KEY_COL
         if KEY_COL in df.columns:
             key_series = df[KEY_COL].astype(str).str.strip()
             dup_mask = key_series.duplicated(keep=False) & (key_series != "")
@@ -299,8 +299,23 @@ def apply_snapshot(
     if missing:
         raise ValueError(f"Mangler kolonner i CSV {csv_path.name}: {sorted(missing)}")
 
-    # 2) Bygg dagens state per permit_key (deterministisk representativ rad)
+    # 2) Bygg rader
     rows = df.to_dict(orient="records")
+
+    # --- NYTT: tidsbegrenset per permit_key fra ALLE rader ---
+    tidsbegrenset_per_permit: Dict[str, Optional[str]] = {}
+    for r in rows:
+        pk = normalize_permit_key(as_text(r.get(KEY_COL)))
+        if not pk:
+            continue
+        tb = parse_ddmmyyyy(as_text(r.get("TIDSBEGRENSET")))
+        if not tb:
+            continue
+        prev = tidsbegrenset_per_permit.get(pk)
+        if not prev:
+            tidsbegrenset_per_permit[pk] = tb
+        else:
+            tidsbegrenset_per_permit[pk] = max(prev, tb)
 
     def lok_nr_sort_key(v) -> int:
         s = as_text(v)
@@ -310,7 +325,6 @@ def apply_snapshot(
         return int(s2) if s2.isdigit() else 10**18
 
     def rep_row_key(r: dict) -> tuple:
-        # Flere tie-breakers for stabilitet
         return (
             lok_nr_sort_key(r.get("LOK_NR")),
             as_text(r.get("LOK_KOMNR")),
@@ -333,13 +347,12 @@ def apply_snapshot(
         if permit_key in best_key and k >= best_key[permit_key]:
             continue
 
-        owner_org = as_text(r.get(OWNER_ORG_COL))     # ORG.NR/PERS.NR (tom for privatperson)
-        owner_name = as_text(r.get(OWNER_NAME_COL))   # NAVN (finnes alltid)
+        owner_org = as_text(r.get(OWNER_ORG_COL))
+        owner_name = as_text(r.get(OWNER_NAME_COL))
         owner_identity = make_owner_identity(owner_org, owner_name)
         row_json = canonical_json(r)
 
-        # NY: tidsbegrenset fra CSV-kolonnen TIDSBEGRENSET (dato i DD-MM-YYYY)
-        tidsbegrenset = parse_ddmmyyyy(as_text(r.get("TIDSBEGRENSET")))
+        tidsbegrenset = tidsbegrenset_per_permit.get(permit_key)
 
         best_key[permit_key] = k
         today[permit_key] = (owner_org, owner_name, owner_identity, row_json, tidsbegrenset)
@@ -363,10 +376,9 @@ def apply_snapshot(
     snapshots_written = 0
     snapshots_skipped = 0
 
-    for permit_key, (_org, _name, _ident, row_json, _tids) in today.items():
+    for permit_key, (_org, _name, _ident, row_json, _tb) in today.items():
         row_hash = sha256_text(row_json)
         prev_hash = latest_snapshot_hash(conn, permit_key)
-
         if prev_hash == row_hash:
             snapshots_skipped += 1
             continue
@@ -413,10 +425,6 @@ def apply_snapshot(
         )
 
     def update_open_tidsbegrenset(permit_key: str, tidsbegrenset: Optional[str]) -> None:
-        """
-        Hvis tidsbegrenset dukker opp i et senere snapshot, vil vi fylle den inn på den åpne perioden
-        (uten å overskrive hvis den allerede er satt).
-        """
         if not tidsbegrenset:
             return
         conn.execute(
@@ -431,38 +439,32 @@ def apply_snapshot(
 
     # Nye tillatelser => åpne eierperiode
     for permit_key in sorted(new_keys):
-        owner_org, owner_name, owner_identity, _row_json, tidsbegrenset = today[permit_key]
-        open_new_ownership(permit_key, owner_org, owner_name, owner_identity, tidsbegrenset)
+        owner_org, owner_name, owner_identity, _row_json, tb = today[permit_key]
+        open_new_ownership(permit_key, owner_org, owner_name, owner_identity, tb)
 
     # Fjernede tillatelser => lukk åpen periode
     for permit_key in sorted(removed_keys):
         close_open_ownership(permit_key)
 
-    # Eierskifte => sammenlign owner_identity (ikke orgnr)
+    # Eierskifte
     owner_changes = 0
-
     for permit_key in sorted(common_keys):
         _prev_owner_org, _prev_owner_name, prev_owner_identity = current[permit_key]
-        owner_org, owner_name, owner_identity, _row_json, tidsbegrenset = today[permit_key]
+        owner_org, owner_name, owner_identity, _row_json, tb = today[permit_key]
 
         if owner_identity != prev_owner_identity:
             owner_changes += 1
             close_open_ownership(permit_key)
-            open_new_ownership(permit_key, owner_org, owner_name, owner_identity, tidsbegrenset)
+            open_new_ownership(permit_key, owner_org, owner_name, owner_identity, tb)
 
             # Transfers-integrasjon (kun når orgnr finnes)
             if enable_transfers and as_text(owner_org):
                 try:
-                    from src.transfers import (
-                        fetch_transfers,
-                        upsert_transfers,
-                        update_ownership_with_transfer,
-                    )
+                    from src.transfers import fetch_transfers, upsert_transfers, update_ownership_with_transfer
 
                     transfers_json = fetch_transfers(permit_key)
                     upsert_transfers(conn, permit_key, transfers_json)
 
-                    # Antatt eksisterende signatur (orgnr-basert)
                     update_ownership_with_transfer(
                         conn=conn,
                         permit_key=permit_key,
@@ -472,22 +474,20 @@ def apply_snapshot(
                 except Exception as e:
                     print(f"ADVARSEL: Transfers-integrasjon feilet for {permit_key}: {e}")
 
-        else:
-            # Samme eier som i går: men vi vil fortsatt kunne backfille tidsbegrenset om det dukker opp nå
-            update_open_tidsbegrenset(permit_key, tidsbegrenset)
+        # Samme eier: men kan ha fått tidsbegrenset i dag
+        update_open_tidsbegrenset(permit_key, tb)
 
-    # Også: for helt nye tillatelser kan tidsbegrenset komme på samme dag (eller senere),
-    # så vi gjør en generell pass for alle "today_keys" (trygt, og gjør ingenting når tomt).
+    # Generell pass (trygg) for alle tillatelser i dag
     for permit_key in sorted(today_keys):
-        _owner_org, _owner_name, _owner_identity, _row_json, tidsbegrenset = today[permit_key]
-        update_open_tidsbegrenset(permit_key, tidsbegrenset)
+        _o, _n, _i, _j, tb = today[permit_key]
+        update_open_tidsbegrenset(permit_key, tb)
 
     # 6) Oppdater permit_current
     for permit_key in sorted(removed_keys):
         conn.execute("DELETE FROM permit_current WHERE permit_key = ?;", (permit_key,))
 
     for permit_key in sorted(today_keys):
-        owner_org, owner_name, owner_identity, row_json, _tidsbegrenset = today[permit_key]
+        owner_org, owner_name, owner_identity, row_json, _tb = today[permit_key]
 
         try:
             row_dict = json.loads(row_json) if row_json else {}
@@ -513,7 +513,7 @@ def apply_snapshot(
             (permit_key, owner_org or None, owner_name or None, owner_identity, snapshot_date, row_json, grunn),
         )
 
-    # 7) Marker snapshot (dagsfil prosessert)
+    # 7) Marker snapshot
     conn.execute(
         """
         INSERT OR REPLACE INTO snapshots(snapshot_date, filename, ingested_at)
@@ -550,7 +550,7 @@ def build_from_folder(
     conn = connect()
     init_db(conn)
 
-    # START CLEAN: bygg alltid fra scratch når vi kjører build_from_folder()
+    # START CLEAN
     conn.execute("DELETE FROM permit_current;")
     conn.execute("DELETE FROM ownership_history;")
     conn.execute("DELETE FROM permit_snapshot;")
