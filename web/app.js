@@ -309,29 +309,55 @@ function renderOwner(ownerIdentity) {
   }
 
   const hist = execAll(`
-    SELECT
-      permit_key,
-      valid_from,
-      COALESCE(NULLIF(valid_to,''), 'Aktiv') AS valid_to,
-      owner_name,
-      owner_orgnr
-    FROM ownership_history
-    WHERE owner_identity = ?
-    ORDER BY date(valid_from), permit_key, id;
-  `, [ownerIdentity]);
+  SELECT
+    permit_key,
+    valid_from,
+    valid_to,
+    COALESCE(NULLIF(valid_to,''), 'Aktiv') AS valid_to_label,
+    owner_name,
+    owner_orgnr,
+    tidsbegrenset
+  FROM ownership_history
+  WHERE owner_identity = ?
+  ORDER BY permit_key, date(valid_from), id;
+`, [ownerIdentity]);
 
-  const histBody = $("ownerHistoryTable").querySelector("tbody");
-  for (const r of hist) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td><a class="link" href="#/permit/${encodeURIComponent(r.permit_key)}">${escapeHtml(r.permit_key)}</a></td>
-      <td>${escapeHtml(r.valid_from)}</td>
-      <td>${escapeHtml(r.valid_to)}</td>
-      <td>${escapeHtml(r.owner_name)}</td>
-      <td>${escapeHtml(r.owner_orgnr || "")}</td>
-    `;
-    histBody.appendChild(tr);
+const histBody = $("ownerHistoryTable").querySelector("tbody");
+histBody.innerHTML = "";
+
+// Vi trenger å vite om en periode har "neste periode" for samme permit_key
+for (let i = 0; i < hist.length; i++) {
+  const r = hist[i];
+  const next = hist[i + 1] || null;
+
+  const validTo = (r.valid_to && String(r.valid_to).trim()) ? String(r.valid_to).trim() : null;
+  const tids = (r.tidsbegrenset && String(r.tidsbegrenset).trim()) ? String(r.tidsbegrenset).trim() : null;
+
+  const hasNextSamePermit = Boolean(next && next.permit_key === r.permit_key);
+
+  let reason = "";
+  if (!validTo) {
+    reason = ""; // aktiv periode
+  } else if (tids && tids.slice(0, 10) === validTo.slice(0, 10)) {
+    reason = `Utløpt (tidsbegrenset ${tids.slice(0, 10)})`;
+  } else if (hasNextSamePermit) {
+    reason = "Overført / ny periode";
+  } else {
+    reason = "Avsluttet";
   }
+
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td><a class="link" href="#/permit/${encodeURIComponent(r.permit_key)}">${escapeHtml(r.permit_key)}</a></td>
+    <td>${escapeHtml(r.valid_from)}</td>
+    <td>${escapeHtml(r.valid_to_label)}</td>
+    <td class="muted">${escapeHtml(reason)}</td>
+    <td>${escapeHtml(r.owner_name)}</td>
+    <td>${escapeHtml(r.owner_orgnr || "")}</td>
+  `;
+  histBody.appendChild(tr);
+}
+
 }
 
 // --- routing ---
