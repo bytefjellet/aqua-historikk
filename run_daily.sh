@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-source .venv/bin/activate
+cd "$(dirname "$0")"
 
-python3 -m src.fetch_daily
-python3 -m src.ingest
-python3 -m src.build_history
-python3 -m src.validate_db
-python3 -m src.publish_db
+PY="/Users/torsteinulvik/code/Aqua-historikk/.venv/bin/python"
+
+"$PY" -m src.fetch_daily
+"$PY" -m src.ingest
+"$PY" -m src.build_history
+"$PY" -m src.validate_db
+"$PY" -m src.publish_db
