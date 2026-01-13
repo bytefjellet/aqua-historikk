@@ -45,7 +45,7 @@ body {
 }
 
 /* =========================
-   Topbar / header
+   Header
    ========================= */
 .topbar {
   background: var(--surface);
@@ -55,103 +55,35 @@ body {
 .topbar-inner {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 14px 24px;
-
-  display: grid;
-  grid-template-columns: auto 1fr auto; /* brand | tabs | status */
-  align-items: center;
-  gap: 16px;
+  padding: 16px 24px 8px;
 }
 
 .brand .title {
   font-size: 1.75rem;
-  font-weight: 750;
-  letter-spacing: .2px;
+  font-weight: 700;
 }
 
 .brand .subtitle {
   font-size: .85rem;
   color: var(--muted);
+  margin-top: 2px;
 }
 
 /* =========================
-   Tabs / navigasjon (inne i header)
+   Tabs – under tittelen, venstrejustert
    ========================= */
 .tabs {
   display: flex;
-  justify-content: center; /* tabs sentrert i midtkolonnen */
   gap: 8px;
-  min-width: 0;            /* viktig for grid */
+  margin-top: 12px;
 }
 
 .tab {
   padding: 8px 14px;
   border-radius: var(--radius-sm);
   text-decoration: none;
-  color: var(--muted);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.tab:hover {
-  background: var(--bg);
-  color: var(--text);
-}
-
-.tab.active {
-  background: var(--primary-soft);
-  color: var(--primary);
-}
-
-/* Status til høyre */
-.status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  justify-content: flex-end;
-  min-width: 0;
-}
-
-/* Mobil: legg tabs under brand/status */
-@media (max-width: 900px) {
-  .topbar-inner {
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-  .tabs {
-    justify-content: flex-start;
-    flex-wrap: wrap;
-  }
-}
-
-
-/* =========================
-   Tabs / navigasjon
-   (desktop: på samme linje som tittelen, visuelt inni header)
-   ========================= */
-.tabs {
-  /* samme "container-bredde" som main:
-     (100% - 48px) pga 24px padding på hver side, maks 1200px */
-  width: min(1200px, calc(100% - 48px));
-  margin: -44px auto 0;              /* løft tabs opp i header */
-
-  background: transparent;
-  border-bottom: none;
-
-  display: flex;
-  align-items: center;
-  gap: 8px;
-
-  /* start tabs etter brand, settes automatisk av JS */
-  padding-left: var(--tabs-left);
-}
-
-.tab {
-  padding: 8px 14px;
-  border-radius: var(--radius-sm);
-  text-decoration: none;
-  color: var(--muted);
   font-weight: 500;
+  color: var(--muted);
 }
 
 .tab:hover {
@@ -164,19 +96,29 @@ body {
   color: var(--primary);
 }
 
-/* Mobil: tabs under header (robust) */
-@media (max-width: 900px) {
-  .topbar { padding: 16px 0 12px; }
+/* =========================
+   Status (øverst til høyre)
+   ========================= */
+.status {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px 12px;
 
-  .tabs {
-    width: min(1200px, calc(100% - 48px));
-    margin: 8px auto 0;
-    padding: 8px 0 12px;
-
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-  }
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
+
+/* =========================
+   Ikke endre farge på besøkte lenker
+   ========================= */
+a:visited { color: inherit; }
+.tab:visited { color: var(--muted); }
+.tab.active:visited { color: var(--primary); }
+
+
+
+
 
 /* =========================
    Hovedcontainer

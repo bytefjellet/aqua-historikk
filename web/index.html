@@ -12,23 +12,25 @@
 </head>
 
 <body>
-  <header class="topbar">
+ <header class="topbar">
+  <div class="topbar-inner">
     <div class="brand">
       <div class="title">Akvakulturregisteret – historikk</div>
       <div class="subtitle">SQLite i nettleseren (sql.js) • GitHub Pages</div>
     </div>
 
-    <div class="status">
-      <span id="dbStatus" class="pill">Laster database…</span>
-      <span id="dbMeta" class="muted"></span>
-    </div>
-  </header>
+    <nav class="tabs" role="tablist" aria-label="Navigasjon">
+      <a id="tab-now" class="tab" href="#/now">Gjeldende status</a>
+      <a id="tab-permit" class="tab" href="#/permit">Tillatelse</a>
+      <a id="tab-owner" class="tab" href="#/owner">Eier</a>
+    </nav>
+  </div>
 
-  <nav class="tabs" role="tablist" aria-label="Navigasjon">
-    <a id="tab-now" class="tab" href="#/now" role="tab">Gjeldende status</a>
-    <a id="tab-permit" class="tab" href="#/permit" role="tab">Tillatelse</a>
-    <a id="tab-owner" class="tab" href="#/owner" role="tab">Eier</a>
-  </nav>
+  <div class="status">
+    <span id="dbStatus" class="pill">DB lastet</span>
+    <span id="dbMeta" class="muted"></span>
+  </div>
+</header>
 
   <main class="container">
     <!-- NOW -->
