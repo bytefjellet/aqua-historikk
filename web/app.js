@@ -752,3 +752,38 @@ function showError(err) {
     if (brand) ro.observe(brand);
   }
 })();
+(function () {
+  function setTabsLeftPadding() {
+    const brand = document.querySelector(".topbar .brand");
+    const tabs = document.querySelector(".tabs");
+    if (!brand || !tabs) return;
+
+    const brandRect = brand.getBoundingClientRect();
+
+    // Luft mellom brand og tabs
+    const gap = 24;
+
+    // Sett tabs-start rett etter brand + gap
+    const left = Math.ceil(brandRect.width + gap);
+
+    document.documentElement.style.setProperty("--tabs-left", `${left}px`);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", setTabsLeftPadding);
+  } else {
+    setTabsLeftPadding();
+  }
+
+  window.addEventListener("resize", setTabsLeftPadding);
+
+  if (document.fonts?.ready) {
+    document.fonts.ready.then(setTabsLeftPadding).catch(() => {});
+  }
+
+  if ("ResizeObserver" in window) {
+    const ro = new ResizeObserver(setTabsLeftPadding);
+    const brand = document.querySelector(".topbar .brand");
+    if (brand) ro.observe(brand);
+  }
+})();

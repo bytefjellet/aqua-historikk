@@ -415,3 +415,57 @@ a:visited { color: inherit; }
 .tab, .tab:visited { color: var(--muted); }
 .tab.active, .tab.active:visited { color: var(--primary); }
 .table a, .table a:visited { color: var(--primary); }
+/* ===== Tabs inn i header, med samme "container" som main ===== */
+
+.topbar {
+  position: relative;
+  padding-bottom: 44px;          /* plass til tabs-linja */
+  border-bottom: 1px solid var(--border);
+}
+
+/* Tabs-linja får NØYAKTIG samme bredde som .container:
+   100% - 48px (24px padding på hver side), maks 1200px */
+.tabs {
+  background: transparent;
+  border-bottom: none;
+
+  width: min(1200px, calc(100% - 48px));
+  margin: -44px auto 0;          /* løft tabs opp i header */
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  /* Start tabs etter brand (settes av JS). Ikke legg på ekstra 24px her. */
+  padding-left: var(--tabs-left, 360px);
+}
+
+/* På mobil: legg tabs under header igjen (unngår trengsel) */
+@media (max-width: 900px) {
+  .topbar { padding-bottom: 12px; }
+
+  .tabs {
+    width: min(1200px, calc(100% - 48px));
+    margin: 8px auto 0;
+    padding: 8px 0 12px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+/* Tittel mer fremtredende enn h2 */
+.brand .title {
+  font-size: 1.65rem;
+  font-weight: 700;
+}
+
+.container h2 {
+  font-size: 1.35rem;
+  font-weight: 650;
+}
+
+/* Besøkte lenker endrer ikke farge */
+a:visited { color: inherit; }
+.tab, .tab:visited { color: var(--muted); }
+.tab.active, .tab.active:visited { color: var(--primary); }
+.table a, .table a:visited { color: var(--primary); }
