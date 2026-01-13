@@ -1,223 +1,261 @@
-/* ============================================================
-   Lyst, tydelig “Denim”-tema (minimalistisk, men mer punch)
-   - Fremhevet sideoverskrift
-   - Mer synlige tabs/knapper øverst
-   - Mer synlig zebra i tabeller
-   Lim inn nederst i style.css
-   ============================================================ */
+/* =========================
+   Grunnoppsett / variabler
+   ========================= */
+:root {
+  --bg: #f6f8fb;
+  --surface: #ffffff;
+  --border: #e5e9f0;
 
-:root{
-  /* Denim palette */
-  --denim-5:   #eff3f9;
-  --denim-10:  #e2eaf7;
-  --denim-30:  #b5cbee;
-  --denim-50:  #89abe5;
-  --denim-70:  #5a77a8;
-  --denim-100: #2c436b;
+  --text: #1f2937;
+  --muted: #6b7280;
 
-  /* Theme tokens */
-  --bg: #ffffff;
-  --panel: #ffffff;
-  --panel2: var(--denim-5);
-  --line: rgba(44,67,107,.18);
+  --primary: #2563eb;      /* blå */
+  --primary-soft: #e0ebff;
 
-  --text: #0f172a;          /* mørk tekst */
-  --muted: rgba(44,67,107,.75);
+  --accent: #0ea5a4;       /* grønn/blå */
+  --accent-soft: #e6f7f7;
 
-  --accent: var(--denim-100);
-  --accent2: var(--denim-70);
+  --radius: 10px;
+  --radius-sm: 6px;
 
-  --ring: rgba(137,171,229,.35);
-  --shadow: 0 10px 28px rgba(44,67,107,.10);
-  --shadow-sm: 0 2px 8px rgba(44,67,107,.10);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md: 0 6px 20px rgba(0,0,0,.06);
 }
 
-/* Base */
-html, body{ background: var(--bg); color: var(--text); }
-.muted{ color: var(--muted); }
-
-/* Topbar: mer “header”-følelse */
-.topbar{
-  background:
-    radial-gradient(1200px 280px at 20% -20%, var(--denim-10), transparent 70%),
-    radial-gradient(900px 260px at 85% 0%, var(--denim-5), transparent 65%),
-    linear-gradient(180deg, #fff, #fff);
-  border-bottom: 1px solid var(--line);
-  padding: 16px 18px;
+/* =========================
+   Reset / base
+   ========================= */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
-/* Brand / tittel mer fremhevet */
-.brand .title{
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: .2px;
-  color: var(--denim-100);
-  line-height: 1.2;
+html, body {
+  margin: 0;
+  padding: 0;
 }
 
-.brand .subtitle{
-  margin-top: 4px;
-  font-size: 13px;
-  color: rgba(44,67,107,.75);
+body {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.45;
 }
 
-/* Status-pill litt tydeligere */
-.pill{
-  border-radius: 999px;
-  padding: 7px 10px;
-  border: 1px solid rgba(44,67,107,.20);
-  background: rgba(226,234,247,.75); /* denim-10 */
-  color: var(--denim-100);
-  box-shadow: var(--shadow-sm);
-}
-.pill.ok{ border-color: rgba(16,185,129,.28); }
-.pill.warn{ border-color: rgba(245,158,11,.28); }
-.pill.bad{ border-color: rgba(239,68,68,.32); }
-
-/* Tabs: mer synlige “knapper” */
-.tabs{
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: #fff;
-  border-bottom: 1px solid var(--line);
-  padding: 10px 18px;
+/* =========================
+   Topbar / header
+   ========================= */
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
 }
 
-/* hvis .tabs er en flex/row hos deg fra før, lar dette den være */
-.tab{
-  display: inline-flex;
+.brand .title {
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.brand .subtitle {
+  font-size: .85rem;
+  color: var(--muted);
+}
+
+.status {
+  display: flex;
   align-items: center;
+  gap: 10px;
+}
+
+.pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: .8rem;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 500;
+}
+
+/* =========================
+   Tabs / navigasjon
+   ========================= */
+.tabs {
+  display: flex;
   gap: 8px;
-  padding: 10px 14px;
-  margin-right: 8px;
-  border-radius: 12px;
+  padding: 8px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
   text-decoration: none;
-  color: var(--denim-100);
-  background: var(--denim-5);
-  border: 1px solid rgba(44,67,107,.18);
-  box-shadow: 0 2px 10px rgba(44,67,107,.08);
-  transition: transform .06s ease, box-shadow .12s ease, background .12s ease;
+  color: var(--muted);
+  font-weight: 500;
 }
 
-.tab:hover{
-  background: var(--denim-10);
-  transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgba(44,67,107,.12);
-}
-
-.tab.active{
-  background: linear-gradient(180deg, var(--denim-30), var(--denim-10));
-  border-color: rgba(44,67,107,.22);
-  color: var(--denim-100);
-}
-
-/* Controls */
-.input{
-  background: #fff;
-  border: 1px solid rgba(44,67,107,.22);
-  border-radius: 12px;
+.tab:hover {
+  background: var(--bg);
   color: var(--text);
 }
 
-.input:focus{
+.tab.active {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+/* =========================
+   Hovedcontainer
+   ========================= */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.view {
+  display: none;
+}
+
+.view.active {
+  display: block;
+}
+
+h2 {
+  margin-top: 0;
+}
+
+h3 {
+  margin-bottom: 8px;
+}
+
+/* =========================
+   Kontroller
+   ========================= */
+.controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.input {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  font-size: .9rem;
+  min-width: 260px;
+}
+
+.input:focus {
   outline: none;
-  border-color: rgba(90,119,168,.55);
-  box-shadow: 0 0 0 4px var(--ring);
+  border-color: var(--primary);
 }
 
-.button{
-  border-radius: 12px;
-  border: 1px solid rgba(44,67,107,.28);
-  background: linear-gradient(180deg, var(--denim-50), var(--denim-70));
-  color: #fff;
-  font-weight: 650;
-  box-shadow: 0 10px 22px rgba(44,67,107,.18);
-  transition: transform .06s ease, filter .12s ease, box-shadow .12s ease;
+.button {
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: white;
+  cursor: pointer;
+  font-weight: 500;
 }
 
-.button:hover{
-  filter: brightness(1.02);
-  transform: translateY(-1px);
-  box-shadow: 0 14px 28px rgba(44,67,107,.22);
+.button:hover {
+  opacity: .9;
 }
 
-.button:active{
-  transform: translateY(0px);
-  box-shadow: 0 8px 18px rgba(44,67,107,.18);
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .9rem;
 }
 
-/* Cards */
-.card{
-  background: #fff;
-  border: 1px solid rgba(44,67,107,.16);
-  border-radius: 16px;
-  box-shadow: var(--shadow);
-}
-
-/* Table wrapper */
-.table-wrap{
-  border: 1px solid rgba(44,67,107,.16);
-  border-radius: 16px;
-  overflow: hidden;
-  background: #fff;
+/* =========================
+   Kort / cards
+   ========================= */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
   box-shadow: var(--shadow-sm);
 }
 
-/* Table */
-.table{
+.hidden {
+  display: none;
+}
+
+/* =========================
+   Split-layout
+   ========================= */
+.split {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 24px;
+}
+
+@media (max-width: 900px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================
+   Tabeller
+   ========================= */
+.table-wrap {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.table {
   width: 100%;
-  min-width: 640px;
-  border-collapse: separate;
-  border-spacing: 0;
+  border-collapse: collapse;
+  font-size: .9rem;
 }
 
-/* Sticky header i “denim”-tone */
-.table thead th{
-  background: linear-gradient(180deg, var(--denim-10), #fff);
-  border-bottom: 1px solid rgba(44,67,107,.18);
-  color: rgba(44,67,107,.85);
-  font-weight: 700;
-  font-size: 13px;
+.table thead {
+  background: #f9fafb;
 }
 
-/* Mer synlig zebra */
-.table tbody tr:nth-child(odd) td{
-  background: #fff;
-}
-.table tbody tr:nth-child(even) td{
-  background: rgba(226,234,247,.65); /* denim-10-ish */
-}
-
-/* Hover litt tydelig (men fortsatt clean) */
-.table tbody tr:hover td{
-  background: rgba(181,203,238,.55); /* denim-30 */
+.table th,
+.table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
 }
 
-/* Celler: litt mer luft */
-.table td, .table th{
-  padding-top: 10px;
-  padding-bottom: 10px;
+.table tbody tr:hover {
+  background: var(--accent-soft);
 }
 
-/* Lenker */
-.link{
-  color: var(--denim-100);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.link:hover{
-  color: var(--denim-70);
+/* =========================
+   Tekstvarianter
+   ========================= */
+.muted {
+  color: var(--muted);
+  font-size: .85rem;
 }
 
-/* Footer */
-.footer{
-  border-top: 1px solid var(--line);
-  background: var(--denim-5);
-}
-
-/* Mobil: tabs rullbare */
-@media (max-width: 700px){
-  .tabs{ overflow-x: auto; white-space: nowrap; }
-  .tab{ white-space: nowrap; }
+/* =========================
+   Footer
+   ========================= */
+.footer {
+  margin-top: 40px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
 }
