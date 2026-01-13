@@ -9,10 +9,10 @@
   --text: #1f2937;
   --muted: #6b7280;
 
-  --primary: #2563eb;      /* blå */
+  --primary: #2563eb;
   --primary-soft: #e0ebff;
 
-  --accent: #0ea5a4;       /* grønn/blå */
+  --accent: #0ea5a4;
   --accent-soft: #e6f7f7;
 
   --radius: 10px;
@@ -20,6 +20,9 @@
 
   --shadow-sm: 0 1px 2px rgba(0,0,0,.04);
   --shadow-md: 0 6px 20px rgba(0,0,0,.06);
+
+  /* settes av JS – fallback hvis JS ikke kjører */
+  --tabs-left: 360px;
 }
 
 /* =========================
@@ -27,9 +30,7 @@
    ========================= */
 *,
 *::before,
-*::after {
-  box-sizing: border-box;
-}
+*::after { box-sizing: border-box; }
 
 html, body {
   margin: 0;
@@ -48,14 +49,12 @@ body {
    ========================= */
 .topbar {
   background: var(--surface);
-  border-bottom: none;
+  position: relative;
+  padding: 16px 0 44px;              /* 44px gir plass til tabs-linja */
+  border-bottom: 1px solid var(--border);
 }
 
-.topbar {
-  padding: 16px 0;
-  padding-bottom: 4px;
-}
-
+/* Innholdet i topbar alignes med .container */
 .topbar > * {
   max-width: 1200px;
   margin: 0 auto;
@@ -67,10 +66,11 @@ body {
   gap: 16px;
 }
 
-
+/* Tittel mer fremtredende enn H2 */
 .brand .title {
-  font-size: 1.2rem;
-  font-weight: 600;
+  font-size: 1.65rem;
+  font-weight: 700;
+  letter-spacing: .2px;
 }
 
 .brand .subtitle {
@@ -95,23 +95,24 @@ body {
 
 /* =========================
    Tabs / navigasjon
+   (desktop: på samme linje som tittelen, visuelt inni header)
    ========================= */
 .tabs {
-  background: var(--surface);
+  /* samme "container-bredde" som main:
+     (100% - 48px) pga 24px padding på hver side, maks 1200px */
+  width: min(1200px, calc(100% - 48px));
+  margin: -44px auto 0;              /* løft tabs opp i header */
 
-  /* samme bredde og linjering som innholdet */
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 8px 24px 12px;
+  background: transparent;
+  border-bottom: none;
 
   display: flex;
+  align-items: center;
   gap: 8px;
 
-  /* dette er den ENESTE streken */
-  border-bottom: 1px solid var(--border);
+  /* start tabs etter brand, settes automatisk av JS */
+  padding-left: var(--tabs-left);
 }
-
-
 
 .tab {
   padding: 8px 14px;
@@ -128,9 +129,22 @@ body {
 
 .tab.active {
   background: var(--primary-soft);
-  border-radius: var(--radius-sm);
+  color: var(--primary);
 }
 
+/* Mobil: tabs under header (robust) */
+@media (max-width: 900px) {
+  .topbar { padding: 16px 0 12px; }
+
+  .tabs {
+    width: min(1200px, calc(100% - 48px));
+    margin: 8px auto 0;
+    padding: 8px 0 12px;
+
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+}
 
 /* =========================
    Hovedcontainer
@@ -141,21 +155,16 @@ body {
   padding: 24px;
 }
 
-.view {
-  display: none;
+.view { display: none; }
+.view.active { display: block; }
+
+h2 { margin-top: 0; }
+.container h2 {
+  font-size: 1.35rem;
+  font-weight: 650;
 }
 
-.view.active {
-  display: block;
-}
-
-h2 {
-  margin-top: 0;
-}
-
-h3 {
-  margin-bottom: 8px;
-}
+h3 { margin-bottom: 8px; }
 
 /* =========================
    Kontroller
@@ -191,9 +200,7 @@ h3 {
   font-weight: 500;
 }
 
-.button:hover {
-  opacity: .9;
-}
+.button:hover { opacity: .9; }
 
 .checkbox {
   display: flex;
@@ -213,9 +220,7 @@ h3 {
   box-shadow: var(--shadow-sm);
 }
 
-.hidden {
-  display: none;
-}
+.hidden { display: none; }
 
 /* =========================
    Split-layout
@@ -227,9 +232,7 @@ h3 {
 }
 
 @media (max-width: 900px) {
-  .split {
-    grid-template-columns: 1fr;
-  }
+  .split { grid-template-columns: 1fr; }
 }
 
 /* =========================
@@ -249,9 +252,7 @@ h3 {
   font-size: .9rem;
 }
 
-.table thead {
-  background: #f9fafb;
-}
+.table thead { background: #f9fafb; }
 
 .table th,
 .table td {
@@ -261,9 +262,7 @@ h3 {
   white-space: nowrap;
 }
 
-.table tbody tr:hover {
-  background: var(--accent-soft);
-}
+.table tbody tr:hover { background: var(--accent-soft); }
 
 /* =========================
    Tekstvarianter
@@ -282,190 +281,14 @@ h3 {
   border-top: 1px solid var(--border);
   background: var(--surface);
 }
-/* =========================
-   1) Tabs på samme linje som tittelen
-   (CSS-triks uten HTML-endring)
-   ========================= */
-
-/* Gi headeren litt ekstra "plass" i bunn, siden tabs flyttes opp */
-.topbar {
-  position: relative;
-  padding-bottom: 44px; /* rom for tabs */
-  border-bottom: 1px solid var(--border); /* behold én strek */
-}
-
-/* Tabs blir visuelt en del av headeren */
-.tabs {
-  background: transparent;   /* samme hvite flate som header */
-  border-bottom: none;       /* unngå ekstra strek */
-  max-width: 1200px;
-  margin: 0 auto;
-
-  /* flytt opp og inn i header-linjen */
-  margin-top: -44px;
-
-  /* dette skyver tabs til høyre for tittelen (juster ved behov) */
-  padding: 0 24px 0 360px;
-
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* På små skjermer: legg tabs under (pent), ikke press dem inn */
-@media (max-width: 900px) {
-  .topbar { padding-bottom: 12px; }
-  .tabs {
-    margin-top: 8px;
-    padding: 8px 24px 12px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-  }
-}
 
 /* =========================
-   2) Tittel mer fremtredende
+   Ikke endre farge på besøkte lenker
    ========================= */
-.brand .title {
-  font-size: 1.65rem;
-  font-weight: 700;
-  letter-spacing: .2px;
-}
+a:visited { color: inherit; }
 
-/* Gjør h2 litt mindre enn tittelen */
-.container h2 {
-  font-size: 1.35rem;
-  font-weight: 650;
-}
+.tab:visited { color: var(--muted); }
+.tab.active:visited { color: var(--primary); }
 
-/* =========================
-   3) Ikke endre farge på besøkte lenker
-   ========================= */
-
-/* Generelle lenker */
-a:visited {
-  color: inherit;
-}
-
-/* Tab-lenker: behold samme farge før/etter klikk */
-.tab,
-.tab:visited {
-  color: var(--muted);
-}
-
-.tab.active,
-.tab.active:visited {
-  color: var(--primary);
-}
-
-/* Hvis du har lenker i tabeller som skal være blå uansett */
 .table a,
-.table a:visited {
-  color: var(--primary);
-}
-/* Header får plass til tabs som flyttes opp */
-.topbar {
-  position: relative;
-  padding-bottom: 44px;              /* plass til tabs-linja */
-  border-bottom: 1px solid var(--border);
-}
-
-/* Tabs flyttes inn i header-området */
-.tabs {
-  background: transparent;
-  border-bottom: none;
-
-  max-width: 1200px;
-  margin: 0 auto;
-  margin-top: -44px;
-
-  /* venstre padding settes automatisk av JS */
-  padding: 0 24px 0 var(--tabs-left, 360px);
-
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* Mobil: tabs under header (enkelt og robust) */
-@media (max-width: 900px) {
-  .topbar { padding-bottom: 12px; }
-
-  .tabs {
-    margin-top: 8px;
-    padding: 8px 24px 12px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-  }
-}
-
-/* Tittel større enn h2 */
-.brand .title {
-  font-size: 1.65rem;
-  font-weight: 700;
-}
-
-.container h2 {
-  font-size: 1.35rem;
-  font-weight: 650;
-}
-
-/* Besøkte lenker endrer ikke farge */
-a:visited { color: inherit; }
-.tab, .tab:visited { color: var(--muted); }
-.tab.active, .tab.active:visited { color: var(--primary); }
-.table a, .table a:visited { color: var(--primary); }
-/* ===== Tabs inn i header, med samme "container" som main ===== */
-
-.topbar {
-  position: relative;
-  padding-bottom: 44px;          /* plass til tabs-linja */
-  border-bottom: 1px solid var(--border);
-}
-
-/* Tabs-linja får NØYAKTIG samme bredde som .container:
-   100% - 48px (24px padding på hver side), maks 1200px */
-.tabs {
-  background: transparent;
-  border-bottom: none;
-
-  width: min(1200px, calc(100% - 48px));
-  margin: -44px auto 0;          /* løft tabs opp i header */
-
-  display: flex;
-  align-items: center;
-  gap: 8px;
-
-  /* Start tabs etter brand (settes av JS). Ikke legg på ekstra 24px her. */
-  padding-left: var(--tabs-left, 360px);
-}
-
-/* På mobil: legg tabs under header igjen (unngår trengsel) */
-@media (max-width: 900px) {
-  .topbar { padding-bottom: 12px; }
-
-  .tabs {
-    width: min(1200px, calc(100% - 48px));
-    margin: 8px auto 0;
-    padding: 8px 0 12px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-  }
-}
-
-/* Tittel mer fremtredende enn h2 */
-.brand .title {
-  font-size: 1.65rem;
-  font-weight: 700;
-}
-
-.container h2 {
-  font-size: 1.35rem;
-  font-weight: 650;
-}
-
-/* Besøkte lenker endrer ikke farge */
-a:visited { color: inherit; }
-.tab, .tab:visited { color: var(--muted); }
-.tab.active, .tab.active:visited { color: var(--primary); }
-.table a, .table a:visited { color: var(--primary); }
+.table a:visited { color: var(--primary); }
