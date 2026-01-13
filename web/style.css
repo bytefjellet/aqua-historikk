@@ -48,11 +48,12 @@ body {
    ========================= */
 .topbar {
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  border-bottom: none;
 }
 
 .topbar {
   padding: 16px 0;
+  padding-bottom: 4px;
 }
 
 .topbar > * {
@@ -97,16 +98,19 @@ body {
    ========================= */
 .tabs {
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
 
-  /* dette matcher .container */
+  /* samme bredde og linjering som innholdet */
   max-width: 1200px;
   margin: 0 auto;
-  padding: 8px 24px;
+  padding: 8px 24px 12px;
 
   display: flex;
   gap: 8px;
+
+  /* dette er den ENESTE streken */
+  border-bottom: 1px solid var(--border);
 }
+
 
 
 .tab {
@@ -124,8 +128,9 @@ body {
 
 .tab.active {
   background: var(--primary-soft);
-  color: var(--primary);
+  border-radius: var(--radius-sm);
 }
+
 
 /* =========================
    Hovedcontainer
