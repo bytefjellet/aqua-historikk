@@ -21,7 +21,7 @@ EOF2
 
 on_error() {
   echo "!! $(ts) Runner FAILED"
-  notify_error
+  notify_error || true
 }
 
 trap on_error ERR
@@ -50,24 +50,34 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# ---- Ensure venv is active (launchd has minimal environment) ----
-if [[ -f "$PROJECT_ROOT/.venv/bin/activate" ]]; then
+# ---- Use venv python explicitly (launchd has minimal environment) ----
+VENV_PY="$PROJECT_ROOT/.venv/bin/python"
+VENV_ACTIVATE="$PROJECT_ROOT/.venv/bin/activate"
+
+if [[ -f "$VENV_ACTIVATE" && -x "$VENV_PY" ]]; then
   # shellcheck disable=SC1091
-  source "$PROJECT_ROOT/.venv/bin/activate"
+  source "$VENV_ACTIVATE"
+
+  # Debug uten å bruke "python" fra PATH:
+  echo "==> $(ts) python=$VENV_PY"
+  "$VENV_PY" -V
+  "$VENV_PY" -c "import sys; print('executable:', sys.executable)"
 else
   echo "!! $(ts) Missing venv at $PROJECT_ROOT/.venv"
   exit 1
 fi
 
 # ---- Run the actual job ----
+# (run_daily.sh bruker allerede .venv/bin/python inni seg, men vi kaller den her)
 "$RUN_SCRIPT"
 
 # ---- Auto-commit & push (ONLY if DB changed) ----
 if [[ -n "$(git status --porcelain web/data/aqua.sqlite)" ]]; then
   echo "==> $(ts) Database changed – committing"
 
-  # Abort if unexpected changes exist
-  if [[ -n "$(git status --porcelain | grep -v '^.. web/data/aqua\.sqlite$')" ]]; then
+  # Abort if unexpected changes exist (anything other than web/data/aqua.sqlite)
+  dirty_other="$(git status --porcelain | grep -vE '^[ MARCUD?]{2} web/data/aqua\.sqlite$' || true)"
+  if [[ -n "$dirty_other" ]]; then
     echo "!! $(ts) Unexpected changes in repo – aborting commit/push"
     git status --porcelain
     exit 1
