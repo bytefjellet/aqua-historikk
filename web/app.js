@@ -182,8 +182,8 @@ async function loadDatabase() {
 
   setMeta(
     snapNo
-      ? `Visningen oppdatert mot Akvakulturregisteret: ${snapNo}`
-      : "Visningen oppdatert mot Akvakulturregisteret: (ukjent dato)"
+      ? `Visningen senest oppdatert mot Akvakulturregisteret: ${snapNo}`
+      : "Visningen senest oppdatert mot Akvakulturregisteret: (ukjent dato)"
   );
 
 
