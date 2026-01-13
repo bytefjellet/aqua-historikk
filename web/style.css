@@ -1,38 +1,147 @@
-/* Sticky tabell-headere */
-.table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: var(--panel2);
+/* --- Visuell oppgradering (legg nederst) --- */
+
+:root{
+  /* hvis du allerede har variabler, behold dine – dette er “nice defaults” */
+  --bg: #0b1220;
+  --panel: rgba(255,255,255,.06);
+  --panel2: rgba(255,255,255,.09);
+  --line: rgba(255,255,255,.12);
+  --text: rgba(255,255,255,.92);
+  --muted: rgba(255,255,255,.65);
+  --accent: #7dd3fc;  /* lys cyan */
+  --accent2: #a78bfa; /* lilla */
+}
+
+body{
+  background:
+    radial-gradient(900px 500px at 15% 10%, rgba(125,211,252,.18), transparent 55%),
+    radial-gradient(800px 520px at 85% 0%, rgba(167,139,250,.16), transparent 55%),
+    linear-gradient(180deg, var(--bg), #070b14);
+  color: var(--text);
+}
+
+.topbar{
+  backdrop-filter: blur(10px);
+  background: rgba(0,0,0,.18);
   border-bottom: 1px solid var(--line);
 }
 
-/* Klikkbar header ved sortering */
-.table thead th[data-sort] {
-  cursor: pointer;
-  user-select: none;
+.title{
+  letter-spacing: .2px;
 }
 
-/* Vis sorteringspil */
-th.sort-asc::after { content: " ▲"; color: var(--muted); font-size: 11px; }
-th.sort-desc::after { content: " ▼"; color: var(--muted); font-size: 11px; }
+.container{
+  max-width: 1100px;
+}
 
-/* Klikkbare rader */
-.table tr.rowlink td { cursor: pointer; }
+/* Tabs: “pill underline” */
+.tabs{
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgba(0,0,0,.18);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
 
-/* Litt mer responsiv tabell */
-.table { min-width: 640px; }
-@media (max-width: 700px) {
-  #nowSearch { min-width: 0; width: 100%; }
-  .input { min-width: 0; width: 100%; }
+.tab{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  color: var(--muted);
+  transition: transform .05s ease, background .15s ease, color .15s ease;
 }
-#permitHistoryTable td:nth-child(3),
-#permitHistoryTable th:nth-child(3) {
-  width: 220px;
-  white-space: nowrap;
+
+.tab:hover{
+  background: rgba(255,255,255,.06);
+  color: var(--text);
 }
-#ownerHistoryTable td:nth-child(4),
-#ownerHistoryTable th:nth-child(4) {
-  width: 220px;
-  white-space: nowrap;
+
+.tab.active{
+  color: var(--text);
+  background: linear-gradient(90deg, rgba(125,211,252,.18), rgba(167,139,250,.16));
+  border: 1px solid rgba(255,255,255,.14);
 }
+
+/* Inputs og buttons */
+.input, .button{
+  border-radius: 12px;
+}
+
+.input{
+  background: rgba(255,255,255,.06);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.input:focus{
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(125,211,252,.18);
+  border-color: rgba(125,211,252,.35);
+}
+
+.button{
+  background: linear-gradient(90deg, rgba(125,211,252,.22), rgba(167,139,250,.20));
+  border: 1px solid rgba(255,255,255,.14);
+  color: var(--text);
+}
+
+.button:hover{
+  filter: brightness(1.05);
+}
+
+/* Card: mer dybde */
+.card{
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 16px;
+  box-shadow: 0 12px 30px rgba(0,0,0,.28);
+}
+
+/* Table: zebra + hover */
+.table{
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table thead th{
+  background: rgba(255,255,255,.08);
+  backdrop-filter: blur(6px);
+}
+
+.table tbody tr:nth-child(even){
+  background: rgba(255,255,255,.03);
+}
+
+.table tbody tr:hover{
+  background: rgba(125,211,252,.08);
+}
+
+/* Sticky header: litt skygge */
+.table thead th{
+  box-shadow: 0 1px 0 rgba(255,255,255,.08);
+}
+
+/* Lenker */
+.link{
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.link:hover{
+  text-decoration: underline;
+}
+
+/* Status-pill: litt “badge”-feel */
+.pill{
+  border-radius: 999px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+}
+
+.pill.ok{ border-color: rgba(34,197,94,.35); }
+.pill.warn{ border-color: rgba(234,179,8,.35); }
+.pill.bad{ border-color: rgba(239,68,68,.40); }

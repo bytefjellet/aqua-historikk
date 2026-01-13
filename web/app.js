@@ -2,9 +2,12 @@
 
 // =========================
 // app.js (full replacement, schema-safe)
-// - Fix: nettsiden krasjer ikke hvis DB på GitHub Pages mangler kolonnen `art`
-// - Fix: datoer vises stabilt (YYYY-MM-DD) i historikk
-// - Bevarer: artsvisning (fallback til row_json["ART"]), tidsbegrenset-logikk, DB-struktur
+// Inkluderer endringer:
+// - OWNER: tøm visning når input slettes + valider orgnr (9 siffer)
+// - PERMIT: tøm visning når input slettes + feilmelding hvis 9 siffer (orgnr)
+// - Art vises på én linje (ikke <br>)
+// - PERMIT card: "Owner identity" -> "Org.nr." (klikkbar) og fjern ikke-klikkbar Org.nr-linje
+// - Bevarer: schema-safe art-kolonne, datoformat (YYYY-MM-DD), tidsbegrenset-logikk
 // =========================
 
 let SQL = null;
@@ -98,6 +101,30 @@ function safeEl(id) {
   return el;
 }
 
+// --- validation / clear helpers ---
+function isNineDigits(s) {
+  return /^[0-9]{9}$/.test(String(s || "").trim());
+}
+
+function clearPermitView() {
+  safeEl("permitEmpty").textContent = "";
+  safeEl("permitCard").classList.add("hidden");
+  const tbody = safeEl("permitHistoryTable").querySelector("tbody");
+  if (!tbody) throw new Error("Mangler <tbody> i #permitHistoryTable");
+  tbody.innerHTML = "";
+}
+
+function clearOwnerView() {
+  safeEl("ownerEmpty").textContent = "";
+  safeEl("ownerCard").classList.add("hidden");
+  const a = safeEl("ownerActiveTable").querySelector("tbody");
+  const h = safeEl("ownerHistoryTable").querySelector("tbody");
+  if (!a) throw new Error("Mangler <tbody> i #ownerActiveTable");
+  if (!h) throw new Error("Mangler <tbody> i #ownerHistoryTable");
+  a.innerHTML = "";
+  h.innerHTML = "";
+}
+
 // --- sort state (NOW) ---
 const sortState = {
   now: { key: "permit_key", dir: 1 } // dir: 1 asc, -1 desc
@@ -114,7 +141,7 @@ async function loadDatabase() {
     });
   }
 
-  // Cache-bust (du har allerede dette, beholdt)
+  // Cache-bust
   const res = await fetch(`${DB_URL}?v=${Date.now()}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Kunne ikke hente ${DB_URL} (HTTP ${res.status})`);
   const buf = await res.arrayBuffer();
@@ -225,13 +252,28 @@ function renderPermit(permitKey) {
   if (!pht) throw new Error("Mangler <tbody> i #permitHistoryTable");
   pht.innerHTML = "";
   safeEl("permitCard").classList.add("hidden");
+
   if (permitKey) safeEl("permitInput").value = permitKey;
 
-  if (!permitKey) {
+  const inputEl = safeEl("permitInput");
+  const keyTrim = String(permitKey || "").trim();
+
+  if (!keyTrim) {
+    clearPermitView();
     safeEl("permitEmpty").textContent =
-      "Skriv en permit_key i feltet over, eller klikk en tillatelse fra Nå-status.";
+      "Skriv en tillatelse i feltet over (f.eks. H-F-0910), eller klikk en tillatelse fra Nå-status.";
     return;
   }
+
+  if (isNineDigits(keyTrim)) {
+    clearPermitView();
+    safeEl("permitEmpty").textContent =
+      "Dette ser ut som et org.nr. (9 siffer). Bruk fanen Innehaver for org.nr., eller skriv et tillatelsesnr. (f.eks. H-F-0910).";
+    return;
+  }
+
+  permitKey = keyTrim;
+  inputEl.value = permitKey;
 
   // Alias ALT vi bruker, og gjør art schema-safe
   const now = one(`
@@ -264,6 +306,7 @@ function renderPermit(permitKey) {
   `, [permitKey]);
 
   if (!now && hist.length === 0) {
+    clearPermitView();
     safeEl("permitEmpty").textContent = `Fant ikke permit_key: ${permitKey}`;
     return;
   }
@@ -277,7 +320,7 @@ function renderPermit(permitKey) {
     try { rowDict = now.row_json ? JSON.parse(now.row_json) : {}; } catch (e) { rowDict = {}; }
 
     const artText = (now.art && String(now.art).trim()) ? now.art : (rowDict["ART"] ?? "");
-    const artHtml = artText ? escapeHtml(artText).replaceAll(", ", "<br>") : "";
+    const artHtml = artText ? escapeHtml(artText) : "";
 
     card.innerHTML = `
       <div><strong>${escapeHtml(now.permit_key)}</strong></div>
@@ -287,11 +330,10 @@ function renderPermit(permitKey) {
 
       <div style="margin-top:8px">
         <div><span class="muted">Eier:</span> ${escapeHtml(now.owner_name)}</div>
-        <div><span class="muted">Owner identity:</span>
+        <div><span class="muted">Org.nr.:</span>
           <a class="link" href="#/owner/${encodeURIComponent(now.owner_identity)}">${escapeHtml(now.owner_identity)}</a>
         </div>
-        <div><span class="muted">Org.nr:</span> ${escapeHtml(now.owner_orgnr || "")}</div>
-        ${artText ? `<div style="margin-top:8px"><span class="muted">Arter:</span><div>${artHtml}</div></div>` : ""}
+        ${artText ? `<div style="margin-top:8px"><span class="muted">Arter:</span> ${artHtml}</div>` : ""}
       </div>
     `;
   } else {
@@ -323,19 +365,18 @@ function renderPermit(permitKey) {
 
       artText = (lastSnap?.art && String(lastSnap.art).trim()) ? lastSnap.art : "";
     }
-    const artHtml = artText ? escapeHtml(artText).replaceAll(", ", "<br>") : "";
+    const artHtml = artText ? escapeHtml(artText) : "";
 
     card.innerHTML = `
       <div><strong>${escapeHtml(permitKey)}</strong></div>
       <div class="muted">Ikke aktiv i siste snapshot${maxDate ? ` (${escapeHtml(displayDate(maxDate))})` : ""} • ${escapeHtml(endText)}</div>
       <div style="margin-top:8px">
         <div><span class="muted">Siste kjente eier:</span> ${escapeHtml(last.owner_name || "")}</div>
-        <div><span class="muted">Owner identity:</span>
+        <div><span class="muted">Org.nr.:</span>
           <a class="link" href="#/owner/${encodeURIComponent(last.owner_identity)}">${escapeHtml(last.owner_identity || "")}</a>
         </div>
-        <div><span class="muted">Org.nr:</span> ${escapeHtml(last.owner_orgnr || "")}</div>
         ${tb ? `<div><span class="muted">Tidsbegrenset:</span> ${escapeHtml(tb)}</div>` : ""}
-        ${artText ? `<div style="margin-top:8px"><span class="muted">Arter:</span><div>${artHtml}</div></div>` : ""}
+        ${artText ? `<div style="margin-top:8px"><span class="muted">Arter:</span> ${artHtml}</div>` : ""}
       </div>
     `;
   }
@@ -391,13 +432,28 @@ function renderOwner(ownerIdentity) {
   if (!oht) throw new Error("Mangler <tbody> i #ownerHistoryTable");
   oht.innerHTML = "";
   safeEl("ownerCard").classList.add("hidden");
+
   if (ownerIdentity) safeEl("ownerInput").value = ownerIdentity;
 
-  if (!ownerIdentity) {
+  const inputEl = safeEl("ownerInput");
+  const identTrim = String(ownerIdentity || "").trim();
+
+  if (!identTrim) {
+    clearOwnerView();
     safeEl("ownerEmpty").textContent =
-      "Skriv en owner_identity i feltet over, eller klikk en eier fra Nå-status/historikk.";
+      "Skriv et org.nr. (9 siffer) i feltet over, eller klikk en eier fra Nå-status/historikk.";
     return;
   }
+
+  if (!isNineDigits(identTrim)) {
+    clearOwnerView();
+    safeEl("ownerEmpty").textContent =
+      "Ugyldig org.nr. Skriv et tall med 9 siffer.";
+    return;
+  }
+
+  ownerIdentity = identTrim;
+  inputEl.value = ownerIdentity;
 
   const stats = one(`
     SELECT
@@ -411,7 +467,8 @@ function renderOwner(ownerIdentity) {
   `, [ownerIdentity]);
 
   if (!stats) {
-    safeEl("ownerEmpty").textContent = `Fant ikke owner_identity: ${ownerIdentity}`;
+    clearOwnerView();
+    safeEl("ownerEmpty").textContent = `Fant ikke org.nr.: ${ownerIdentity}`;
     return;
   }
 
@@ -419,7 +476,7 @@ function renderOwner(ownerIdentity) {
   card.classList.remove("hidden");
   card.innerHTML = `
     <div><strong>${escapeHtml(stats.owner_name || "(ukjent)")}</strong></div>
-    <div class="muted">${escapeHtml(stats.owner_identity)}</div>
+    <div class="muted">Org.nr.: ${escapeHtml(stats.owner_identity)}</div>
     <div style="margin-top:8px" class="muted">
       Aktive tillatelser: ${stats.active_permits} • Historiske perioder: ${stats.total_periods}
     </div>
@@ -457,7 +514,7 @@ function renderOwner(ownerIdentity) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><a class="link" href="#/permit/${encodeURIComponent(r.permit_key)}">${escapeHtml(r.permit_key)}</a></td>
-      <td>${escapeHtml(art).replaceAll(", ", "<br>")}</td>
+      <td>${escapeHtml(art)}</td>
       <td>${escapeHtml(formal)}</td>
       <td>${escapeHtml(produksjonsform)}</td>
       <td>${escapeHtml(kapasitet)}</td>
@@ -572,22 +629,67 @@ function wireEvents() {
     });
   });
 
+  // PERMIT actions
   safeEl("permitGo").addEventListener("click", () => {
     const key = safeEl("permitInput").value.trim();
-    if (!key) return;
+    if (!key) {
+      clearPermitView();
+      safeEl("permitEmpty").textContent = "Skriv et tillatelsesnr. (f.eks. H-F-0910).";
+      return;
+    }
+    if (isNineDigits(key)) {
+      clearPermitView();
+      safeEl("permitEmpty").textContent =
+        "Dette er et org.nr. (9 siffer). Bruk fanen Innehaver for org.nr.";
+      return;
+    }
     toHashPermit(key);
   });
+
   safeEl("permitInput").addEventListener("keydown", (e) => {
     if (e.key === "Enter") safeEl("permitGo").click();
   });
 
+  // Tøm permit-visning når input slettes
+  safeEl("permitInput").addEventListener("input", (e) => {
+    const v = e.target.value.trim();
+    if (!v) {
+      clearPermitView();
+      safeEl("permitEmpty").textContent =
+        "Skriv en tillatelse i feltet over (f.eks. H-F-0910), eller klikk en tillatelse fra Nå-status.";
+      location.hash = "#/permit";
+    }
+  });
+
+  // OWNER actions
   safeEl("ownerGo").addEventListener("click", () => {
     const ident = safeEl("ownerInput").value.trim();
-    if (!ident) return;
+    if (!ident) {
+      clearOwnerView();
+      safeEl("ownerEmpty").textContent = "Skriv et org.nr. (9 siffer).";
+      return;
+    }
+    if (!isNineDigits(ident)) {
+      clearOwnerView();
+      safeEl("ownerEmpty").textContent = "Ugyldig org.nr. Skriv et tall med 9 siffer.";
+      return;
+    }
     toHashOwner(ident);
   });
+
   safeEl("ownerInput").addEventListener("keydown", (e) => {
     if (e.key === "Enter") safeEl("ownerGo").click();
+  });
+
+  // Tøm owner-visning når input slettes
+  safeEl("ownerInput").addEventListener("input", (e) => {
+    const v = e.target.value.trim();
+    if (!v) {
+      clearOwnerView();
+      safeEl("ownerEmpty").textContent =
+        "Skriv et org.nr. (9 siffer) i feltet over, eller klikk en eier fra Nå-status/historikk.";
+      location.hash = "#/owner";
+    }
   });
 }
 
