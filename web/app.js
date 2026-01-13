@@ -370,7 +370,7 @@ for (const r of active) {
 
   const art = rowDict["ART"] ?? "";
   const formal = rowDict["FORMÅL"] ?? "";
-  const produksjonsstadium = rowDict["PRODUKSJONSSTADIUM"] ?? rowDict["PRODUKSJONSFORM"] ?? "";
+  const produksjonsform = rowDict["PRODUKSJONSFORM"] ?? "";
   const kap = rowDict["TILL_KAP"] ?? "";
   const enh = rowDict["TILL_ENHET"] ?? "";
   const prodOmr = rowDict["PROD_OMR"] ?? "";
@@ -384,7 +384,7 @@ for (const r of active) {
     <td><a class="link" href="#/permit/${encodeURIComponent(r.permit_key)}">${escapeHtml(r.permit_key)}</a></td>
     <td>${escapeHtml(art)}</td>
     <td>${escapeHtml(formal)}</td>
-    <td>${escapeHtml(produksjonsstadium)}</td>
+    <td>${escapeHtml(produksjonsform)}</td>
     <td>${escapeHtml(kapasitet)}</td>
     <td>${escapeHtml(prodOmr)}</td>
   `;
