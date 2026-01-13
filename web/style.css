@@ -302,3 +302,5 @@ a:visited { color: inherit; }
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
+html, body { overflow: visible !important; }
+.container, main, header { overflow: visible !important; }
