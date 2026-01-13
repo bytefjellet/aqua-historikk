@@ -49,27 +49,23 @@ body {
    ========================= */
 .topbar {
   background: var(--surface);
-  position: relative;
-  padding: 16px 0 44px;              /* 44px gir plass til tabs-linja */
   border-bottom: 1px solid var(--border);
 }
 
-/* Innholdet i topbar alignes med .container */
-.topbar > * {
+.topbar-inner {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 14px 24px;
 
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto 1fr auto; /* brand | tabs | status */
   align-items: center;
   gap: 16px;
 }
 
-/* Tittel mer fremtredende enn H2 */
 .brand .title {
-  font-size: 1.65rem;
-  font-weight: 700;
+  font-size: 1.75rem;
+  font-weight: 750;
   letter-spacing: .2px;
 }
 
@@ -78,20 +74,56 @@ body {
   color: var(--muted);
 }
 
+/* =========================
+   Tabs / navigasjon (inne i header)
+   ========================= */
+.tabs {
+  display: flex;
+  justify-content: center; /* tabs sentrert i midtkolonnen */
+  gap: 8px;
+  min-width: 0;            /* viktig for grid */
+}
+
+.tab {
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tab:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.tab.active {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+/* Status til høyre */
 .status {
   display: flex;
   align-items: center;
   gap: 10px;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
-.pill {
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: .8rem;
-  background: var(--primary-soft);
-  color: var(--primary);
-  font-weight: 500;
+/* Mobil: legg tabs under brand/status */
+@media (max-width: 900px) {
+  .topbar-inner {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .tabs {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
 }
+
 
 /* =========================
    Tabs / navigasjon
@@ -292,3 +324,8 @@ a:visited { color: inherit; }
 
 .table a,
 .table a:visited { color: var(--primary); }
+
+a:visited { color: inherit; }
+.tab:visited { color: var(--muted); }
+.tab.active:visited { color: var(--primary); }
+.table a, .table a:visited { color: var(--primary); }
