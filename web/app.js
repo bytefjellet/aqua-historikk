@@ -69,6 +69,13 @@ function iso10(s) {
   return t.slice(0, 10);
 }
 
+function displayDate(s) {
+  // Trygg visning i UI: YYYY-MM-DD hvis mulig, ellers original
+  if (s == null) return "";
+  const i = iso10(s);
+  return i || String(s);
+}
+
 // --- sort state (NOW) ---
 const sortState = {
   now: { key: "permit_key", dir: 1 } // dir: 1 asc, -1 desc
@@ -136,7 +143,11 @@ function renderNow() {
   const only = $("onlyGrunnrente").checked;
 
   const baseSql = `
-    SELECT permit_key, owner_name, owner_identity, owner_orgnr
+    SELECT
+      permit_key AS permit_key,
+      owner_name AS owner_name,
+      owner_identity AS owner_identity,
+      owner_orgnr AS owner_orgnr
     FROM permit_current
     ${only ? "WHERE grunnrente_pliktig = 1" : ""}
     ORDER BY permit_key
@@ -188,7 +199,6 @@ function renderNow() {
   }
 }
 
-
 // --- PERMIT view ---
 function renderPermit(permitKey) {
   setActiveTab("tab-permit");
@@ -205,21 +215,31 @@ function renderPermit(permitKey) {
     return;
   }
 
+  // Alias ALT vi bruker i JS (kritisk for sql.js getAsObject keys)
   const now = one(`
-  SELECT permit_key, owner_orgnr, owner_name, owner_identity, snapshot_date, grunnrente_pliktig, art, row_json
-  FROM permit_current
-  WHERE permit_key = ?;
-`, [permitKey]);
+    SELECT
+      permit_key AS permit_key,
+      owner_orgnr AS owner_orgnr,
+      owner_name AS owner_name,
+      owner_identity AS owner_identity,
+      snapshot_date AS snapshot_date,
+      grunnrente_pliktig AS grunnrente_pliktig,
+      art AS art,
+      row_json AS row_json
+    FROM permit_current
+    WHERE permit_key = ?;
+  `, [permitKey]);
 
+  // Alias ALT vi bruker i JS (kritisk for dato-feltene)
   const hist = execAll(`
     SELECT
-      valid_from,
-      valid_to,
+      valid_from AS valid_from,
+      valid_to   AS valid_to,
       COALESCE(NULLIF(valid_to,''), 'Aktiv') AS valid_to_label,
-      owner_name,
-      owner_orgnr,
-      owner_identity,
-      tidsbegrenset
+      owner_name AS owner_name,
+      owner_orgnr AS owner_orgnr,
+      owner_identity AS owner_identity,
+      tidsbegrenset AS tidsbegrenset
     FROM ownership_history
     WHERE permit_key = ?
     ORDER BY date(valid_from), id;
@@ -234,29 +254,29 @@ function renderPermit(permitKey) {
   card.classList.remove("hidden");
 
   if (now) {
-  // art: bruk aggregert DB-kolonne hvis den finnes, ellers fallback til row_json["ART"]
-  let rowDict = {};
-  try { rowDict = now.row_json ? JSON.parse(now.row_json) : {}; } catch (e) { rowDict = {}; }
+    // art: bruk aggregert DB-kolonne hvis den finnes, ellers fallback til row_json["ART"]
+    let rowDict = {};
+    try { rowDict = now.row_json ? JSON.parse(now.row_json) : {}; } catch (e) { rowDict = {}; }
 
-  const artText = (now.art && String(now.art).trim()) ? now.art : (rowDict["ART"] ?? "");
-  const artHtml = artText ? escapeHtml(artText).replaceAll(", ", "<br>") : "";
+    const artText = (now.art && String(now.art).trim()) ? now.art : (rowDict["ART"] ?? "");
+    const artHtml = artText ? escapeHtml(artText).replaceAll(", ", "<br>") : "";
 
-  card.innerHTML = `
-    <div><strong>${escapeHtml(now.permit_key)}</strong></div>
-    <div class="muted">
-      Snapshot: ${escapeHtml(now.snapshot_date)} • Grunnrente: ${Number(now.grunnrente_pliktig) === 1 ? "1" : "0"}
-    </div>
-
-    <div style="margin-top:8px">
-      <div><span class="muted">Eier:</span> ${escapeHtml(now.owner_name)}</div>
-      <div><span class="muted">Owner identity:</span>
-        <a class="link" href="#/owner/${encodeURIComponent(now.owner_identity)}">${escapeHtml(now.owner_identity)}</a>
+    card.innerHTML = `
+      <div><strong>${escapeHtml(now.permit_key)}</strong></div>
+      <div class="muted">
+        Snapshot: ${escapeHtml(displayDate(now.snapshot_date))} • Grunnrente: ${Number(now.grunnrente_pliktig) === 1 ? "1" : "0"}
       </div>
-      <div><span class="muted">Org.nr:</span> ${escapeHtml(now.owner_orgnr || "")}</div>
-      ${artText ? `<div style="margin-top:8px"><span class="muted">Arter:</span><div>${artHtml}</div></div>` : ""}
-    </div>
-  `;
-} else {
+
+      <div style="margin-top:8px">
+        <div><span class="muted">Eier:</span> ${escapeHtml(now.owner_name)}</div>
+        <div><span class="muted">Owner identity:</span>
+          <a class="link" href="#/owner/${encodeURIComponent(now.owner_identity)}">${escapeHtml(now.owner_identity)}</a>
+        </div>
+        <div><span class="muted">Org.nr:</span> ${escapeHtml(now.owner_orgnr || "")}</div>
+        ${artText ? `<div style="margin-top:8px"><span class="muted">Arter:</span><div>${artHtml}</div></div>` : ""}
+      </div>
+    `;
+  } else {
     // not active in permit_current => show last known from history
     const last = hist[hist.length - 1];
     const lastTo = iso10(last.valid_to);
@@ -274,7 +294,7 @@ function renderPermit(permitKey) {
 
     // Hent sist kjente art fra permit_snapshot (lagret ved build) – også for utløpte tillatelser
     const lastSnap = one(`
-      SELECT art
+      SELECT art AS art
       FROM permit_snapshot
       WHERE permit_key = ?
       ORDER BY snapshot_date DESC
@@ -284,10 +304,9 @@ function renderPermit(permitKey) {
     const artText = (lastSnap?.art && String(lastSnap.art).trim()) ? lastSnap.art : "";
     const artHtml = artText ? escapeHtml(artText).replaceAll(", ", "<br>") : "";
 
-
     card.innerHTML = `
       <div><strong>${escapeHtml(permitKey)}</strong></div>
-      <div class="muted">Ikke aktiv i siste snapshot${maxDate ? ` (${escapeHtml(maxDate)})` : ""} • ${escapeHtml(endText)}</div>
+      <div class="muted">Ikke aktiv i siste snapshot${maxDate ? ` (${escapeHtml(displayDate(maxDate))})` : ""} • ${escapeHtml(endText)}</div>
       <div style="margin-top:8px">
         <div><span class="muted">Siste kjente eier:</span> ${escapeHtml(last.owner_name || "")}</div>
         <div><span class="muted">Owner identity:</span>
@@ -322,10 +341,13 @@ function renderPermit(permitKey) {
       reason = "Avsluttet";
     }
 
+    const vf = displayDate(r.valid_from);
+    const vtLabel = (r.valid_to_label === "Aktiv") ? "Aktiv" : displayDate(r.valid_to_label);
+
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${escapeHtml(r.valid_from)}</td>
-      <td>${escapeHtml(r.valid_to_label)}</td>
+      <td>${escapeHtml(vf)}</td>
+      <td>${escapeHtml(vtLabel)}</td>
       <td class="muted">${escapeHtml(reason)}</td>
       <td>${escapeHtml(r.owner_name)}</td>
       <td><a class="link" href="#/owner/${encodeURIComponent(r.owner_identity)}">${escapeHtml(r.owner_identity)}</a></td>
@@ -354,7 +376,7 @@ function renderOwner(ownerIdentity) {
 
   const stats = one(`
     SELECT
-      owner_identity,
+      owner_identity AS owner_identity,
       MAX(owner_name) AS owner_name,
       SUM(CASE WHEN valid_to IS NULL OR valid_to = '' THEN 1 ELSE 0 END) AS active_permits,
       COUNT(*) AS total_periods
@@ -379,53 +401,53 @@ function renderOwner(ownerIdentity) {
   `;
 
   const active = execAll(`
-    SELECT permit_key, art, row_json
+    SELECT
+      permit_key AS permit_key,
+      art AS art,
+      row_json AS row_json
     FROM permit_current
     WHERE owner_identity = ?
     ORDER BY permit_key;
   `, [ownerIdentity]);
 
+  const activeBody = $("ownerActiveTable").querySelector("tbody");
+  activeBody.innerHTML = "";
 
-const activeBody = $("ownerActiveTable").querySelector("tbody");
-activeBody.innerHTML = "";
+  for (const r of active) {
+    const rowDict = r.row_json ? (() => { try { return JSON.parse(r.row_json); } catch { return {}; } })() : {};
 
-for (const r of active) {
-  const rowDict = r.row_json ? (() => { try { return JSON.parse(r.row_json); } catch { return {}; } })() : {};
+    const art = (r.art && String(r.art).trim()) ? r.art : (rowDict["ART"] ?? "");
+    const formal = rowDict["FORMÅL"] ?? "";
+    const produksjonsform = rowDict["PRODUKSJONSFORM"] ?? "";
+    const kap = rowDict["TILL_KAP"] ?? "";
+    const enh = rowDict["TILL_ENHET"] ?? "";
+    const prodOmr = rowDict["PROD_OMR"] ?? "";
 
-  const art = (r.art && String(r.art).trim()) ? r.art : (rowDict["ART"] ?? "");
-  const formal = rowDict["FORMÅL"] ?? "";
-  const produksjonsform = rowDict["PRODUKSJONSFORM"] ?? "";
-  const kap = rowDict["TILL_KAP"] ?? "";
-  const enh = rowDict["TILL_ENHET"] ?? "";
-  const prodOmr = rowDict["PROD_OMR"] ?? "";
+    const kapasitet = String(kap).trim()
+      ? `${String(kap).trim()}${String(enh).trim() ? " " + String(enh).trim() : ""}`
+      : "";
 
-  const kapasitet = String(kap).trim()
-    ? `${String(kap).trim()}${String(enh).trim() ? " " + String(enh).trim() : ""}`
-    : "";
-
-  const tr = document.createElement("tr");
-  tr.innerHTML = `
-    <td><a class="link" href="#/permit/${encodeURIComponent(r.permit_key)}">${escapeHtml(r.permit_key)}</a></td>
-    <td>${escapeHtml(art).replaceAll(", ", "<br>")}</td>
-    <td>${escapeHtml(formal)}</td>
-    <td>${escapeHtml(produksjonsform)}</td>
-    <td>${escapeHtml(kapasitet)}</td>
-    <td>${escapeHtml(prodOmr)}</td>
-  `;
-  activeBody.appendChild(tr);
-}
-
-
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><a class="link" href="#/permit/${encodeURIComponent(r.permit_key)}">${escapeHtml(r.permit_key)}</a></td>
+      <td>${escapeHtml(art).replaceAll(", ", "<br>")}</td>
+      <td>${escapeHtml(formal)}</td>
+      <td>${escapeHtml(produksjonsform)}</td>
+      <td>${escapeHtml(kapasitet)}</td>
+      <td>${escapeHtml(prodOmr)}</td>
+    `;
+    activeBody.appendChild(tr);
+  }
 
   const hist = execAll(`
     SELECT
-      permit_key,
-      valid_from,
-      valid_to,
+      permit_key AS permit_key,
+      valid_from AS valid_from,
+      valid_to   AS valid_to,
       COALESCE(NULLIF(valid_to,''), 'Aktiv') AS valid_to_label,
-      owner_name,
-      owner_orgnr,
-      tidsbegrenset
+      owner_name AS owner_name,
+      owner_orgnr AS owner_orgnr,
+      tidsbegrenset AS tidsbegrenset
     FROM ownership_history
     WHERE owner_identity = ?
     ORDER BY permit_key, date(valid_from), id;
@@ -453,11 +475,14 @@ for (const r of active) {
       reason = "Avsluttet";
     }
 
+    const vf = displayDate(r.valid_from);
+    const vtLabel = (r.valid_to_label === "Aktiv") ? "Aktiv" : displayDate(r.valid_to_label);
+
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><a class="link" href="#/permit/${encodeURIComponent(r.permit_key)}">${escapeHtml(r.permit_key)}</a></td>
-      <td>${escapeHtml(r.valid_from)}</td>
-      <td>${escapeHtml(r.valid_to_label)}</td>
+      <td>${escapeHtml(vf)}</td>
+      <td>${escapeHtml(vtLabel)}</td>
       <td class="muted">${escapeHtml(reason)}</td>
       <td>${escapeHtml(r.owner_name)}</td>
       <td>${escapeHtml(r.owner_orgnr || "")}</td>
