@@ -366,16 +366,11 @@ const activeBody = $("ownerActiveTable").querySelector("tbody");
 activeBody.innerHTML = "";
 
 for (const r of active) {
-  let rowDict = {};
-  try {
-    rowDict = r.row_json ? JSON.parse(r.row_json) : {};
-  } catch (e) {
-    rowDict = {};
-  }
+  const rowDict = r.row_json ? (() => { try { return JSON.parse(r.row_json); } catch { return {}; } })() : {};
 
   const art = rowDict["ART"] ?? "";
   const formal = rowDict["FORMÅL"] ?? "";
-  const produksjonsform = rowDict["PRODUKSJONSFORM"] ?? "";
+  const produksjonsstadium = rowDict["PRODUKSJONSSTADIUM"] ?? "";
   const kap = rowDict["TILL_KAP"] ?? "";
   const enh = rowDict["TILL_ENHET"] ?? "";
   const prodOmr = rowDict["PROD_OMR"] ?? "";
@@ -389,12 +384,13 @@ for (const r of active) {
     <td><a class="link" href="#/permit/${encodeURIComponent(r.permit_key)}">${escapeHtml(r.permit_key)}</a></td>
     <td>${escapeHtml(art)}</td>
     <td>${escapeHtml(formal)}</td>
-    <td>${escapeHtml(produksjonsform)}</td>
+    <td>${escapeHtml(produksjonsstadium)}</td>
     <td>${escapeHtml(kapasitet)}</td>
     <td>${escapeHtml(prodOmr)}</td>
   `;
   activeBody.appendChild(tr);
 }
+
 
 
   const hist = execAll(`
