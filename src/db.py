@@ -4,6 +4,12 @@ from __future__ import annotations
 import sqlite3
 from src.config import DB_PATH
 
+import os, sys
+p = os.getenv("AQUA_DB_PATH", "")
+if p.replace("\\", "/").endswith("/web/data/aqua.sqlite"):
+    print("Refuserer å bygge direkte til web/data/aqua.sqlite. Bygg til db/aqua.sqlite og kopier etterpå.")
+    sys.exit(2)
+
 
 def connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
