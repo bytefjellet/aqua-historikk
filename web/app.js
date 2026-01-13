@@ -370,7 +370,7 @@ for (const r of active) {
 
   const art = rowDict["ART"] ?? "";
   const formal = rowDict["FORMÅL"] ?? "";
-  const produksjonsstadium = rowDict["PRODUKSJONSSTADIUM"] ?? "";
+  const produksjonsstadium = rowDict["PRODUKSJONSSTADIUM"] ?? rowDict["PRODUKSJONSFORM"] ?? "";
   const kap = rowDict["TILL_KAP"] ?? "";
   const enh = rowDict["TILL_ENHET"] ?? "";
   const prodOmr = rowDict["PROD_OMR"] ?? "";
