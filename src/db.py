@@ -87,14 +87,18 @@ def init_db(conn: sqlite3.Connection) -> None:
             row_json TEXT NOT NULL,
             row_hash TEXT NOT NULL,
             art TEXT,
+            grunnrente_pliktig INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (snapshot_date, permit_key)
         );
+
         """
     )
 
     # migrasjoner
     _add_column_if_missing(conn, "permit_snapshot", "row_hash", "TEXT")
     _add_column_if_missing(conn, "permit_snapshot", "art", "TEXT")
+    _add_column_if_missing(conn, "permit_snapshot", "grunnrente_pliktig", "INTEGER NOT NULL DEFAULT 0")
+
 
     # Backfill (sikkerhet)
     conn.execute(

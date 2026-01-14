@@ -390,7 +390,7 @@ def apply_snapshot(
     removed_keys = current_keys - today_keys
     common_keys = today_keys & current_keys
 
-    # 4) Lagre permit_snapshot (kun hvis endret)
+        # 4) Lagre permit_snapshot (kun hvis endret)
     snapshots_written = 0
     snapshots_skipped = 0
 
@@ -402,14 +402,26 @@ def apply_snapshot(
             snapshots_skipped += 1
             continue
 
+        # Beregn grunnrente_pliktig (samme logikk som for permit_current)
+        try:
+            row_dict = json.loads(row_json) if row_json else {}
+        except Exception:
+            row_dict = {}
+
+        grunn = 1 if is_grunnrente_pliktig(row_dict) else 0
+
         conn.execute(
             """
-            INSERT OR REPLACE INTO permit_snapshot(snapshot_date, permit_key, row_json, row_hash)
-            VALUES (?, ?, ?, ?);
+            INSERT OR REPLACE INTO permit_snapshot(
+                snapshot_date, permit_key, row_json, row_hash, grunnrente_pliktig
+            )
+            VALUES (?, ?, ?, ?, ?);
             """,
-            (snapshot_date, permit_key, row_json, row_hash),
+            (snapshot_date, permit_key, row_json, row_hash, grunn),
         )
         snapshots_written += 1
+
+
 
     # 5) Ownership history (SCD2 på eier, via owner_identity)
     close_date = prev_day(snapshot_date)
