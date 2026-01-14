@@ -1,13 +1,13 @@
 /* global initSqlJs */
 
 // =========================
-// app.js (full replacement, schema-safe)
-// Inkluderer endringer:
-// - OWNER: tøm visning når input slettes + valider orgnr (9 siffer)
-// - PERMIT: tøm visning når input slettes + feilmelding hvis 9 siffer (orgnr)
-// - Art vises på én linje (ikke <br>)
-// - PERMIT card: "Owner identity" -> "Org.nr." (klikkbar) og fjern ikke-klikkbar Org.nr-linje
-// - Bevarer: schema-safe art-kolonne, datoformat (YYYY-MM-DD), tidsbegrenset-logikk
+// app.js (full replacement, schema-safe, robust permit search)
+// Fokus på robust historisk tillatelse-søk:
+// - Normaliser permit_key (case + whitespace) i både JS og SQL
+// - Unngå “forrige resultat” ved å aldri vise result-layout før vi har gyldige data
+// - Fjern dobbeltdefinerte helpers + fiks null-bug i historisk card
+// - Rydd visning atomisk ved tom input
+// - Bevarer: schema-safe art, datoformat, tidsbegrenset-logikk, UI/empty state
 // =========================
 
 let SQL = null;
@@ -24,8 +24,14 @@ const schema = {
 // --- helpers ---
 function $(id) { return document.getElementById(id); }
 
+function safeEl(id) {
+  const el = $(id);
+  if (!el) throw new Error(`Mangler element i HTML: #${id}`);
+  return el;
+}
+
 function setStatus(text, kind) {
-  const el = $("dbStatus");
+  const el = safeEl("dbStatus");
   el.textContent = text;
 
   // sørg for at det alltid ser ut som en pill
@@ -36,9 +42,8 @@ function setStatus(text, kind) {
   if (kind) el.classList.add(kind);
 }
 
-
 function setMeta(text) {
-  $("dbMeta").textContent = text || "";
+  safeEl("dbMeta").textContent = text || "";
 }
 
 function escapeHtml(s) {
@@ -51,8 +56,23 @@ function escapeHtml(s) {
 }
 
 function toHashNow() { location.hash = "#/now"; }
-function toHashPermit(key) { location.hash = `#/permit/${encodeURIComponent(key)}`; }
-function toHashOwner(identity) { location.hash = `#/owner/${encodeURIComponent(identity)}`; }
+
+function normalizePermitKey(raw) {
+  return (raw ?? "")
+    .toString()
+    .trim()
+    .replace(/\s+/g, "") // fjern også whitespace inni
+    .toUpperCase();
+}
+
+function toHashPermit(key) {
+  const norm = normalizePermitKey(key);
+  location.hash = `#/permit/${encodeURIComponent(norm)}`;
+}
+
+function toHashOwner(identity) {
+  location.hash = `#/owner/${encodeURIComponent(String(identity ?? "").trim())}`;
+}
 
 function setActiveTab(tabId) {
   for (const id of ["tab-now", "tab-permit", "tab-owner"]) {
@@ -95,6 +115,7 @@ function displayDate(s) {
   if (s == null) return "";
   return iso10(s) || String(s);
 }
+
 function formatNorwegianDate(isoDate) {
   // Forventer f.eks. "2026-01-13"
   const d = new Date(isoDate + "T00:00:00");
@@ -110,60 +131,19 @@ function hasColumn(table, col) {
   return rows.some(r => String(r.name) === col);
 }
 
-function safeEl(id) {
-  const el = $(id);
-  if (!el) throw new Error(`Mangler element i HTML: #${id}`);
-  return el;
-}
-
-// --- validation / clear helpers ---
+// --- validation ---
 function isNineDigits(s) {
-  return /^[0-9]{9}$/.test(String(s || "").trim());
+  return /^[0-9]{9}$/.test(String(s || "").trim().replace(/\s+/g, ""));
 }
 
-function clearPermitView() {
-  setPermitResultsVisible(false);
-  setPermitEmptyStateVisible(true);   // <-- MÅ være her
-
-  safeEl("permitEmpty").textContent = "";
-  safeEl("permitCard").classList.add("hidden");
-
-  const tbody = safeEl("permitHistoryTable").querySelector("tbody");
-  if (!tbody) throw new Error("Mangler <tbody> i #permitHistoryTable");
-  tbody.innerHTML = "";
-}
-
-
-
-function setPermitResultsVisible(visible) {
-  const split = safeEl("view-permit").querySelector(".split");
-  if (split) split.classList.toggle("hidden", !visible);
-}
-
-/* NY helper – LEGG DENNE INN */
-function setPermitResultsVisible(visible) {
-  const split = safeEl("view-permit").querySelector(".split");
-  if (split) split.classList.toggle("hidden", !visible);
-}
-
-
-function clearOwnerView() {
-  safeEl("ownerEmpty").textContent = "";
-  safeEl("ownerCard").classList.add("hidden");
-  const a = safeEl("ownerActiveTable").querySelector("tbody");
-  const h = safeEl("ownerHistoryTable").querySelector("tbody");
-  if (!a) throw new Error("Mangler <tbody> i #ownerActiveTable");
-  if (!h) throw new Error("Mangler <tbody> i #ownerHistoryTable");
-  a.innerHTML = "";
-  h.innerHTML = "";
-}
-
+// --- PERMIT empty state helpers ---
 function setPermitEmptyStateVisible(visible) {
-  const el = document.getElementById("permitEmptyState");
+  const el = $("permitEmptyState");
   if (el) el.classList.toggle("hidden", !visible);
 }
+
 function setPermitEmptyStateContent({ icon, title, text }) {
-  const root = document.getElementById("permitEmptyState");
+  const root = $("permitEmptyState");
   if (!root) return;
 
   const iconEl = root.querySelector(".empty-icon");
@@ -175,6 +155,46 @@ function setPermitEmptyStateContent({ icon, title, text }) {
   if (textEl  && text  != null) textEl.textContent  = text;
 }
 
+function setPermitResultsVisible(visible) {
+  const split = safeEl("view-permit").querySelector(".split");
+  if (split) split.classList.toggle("hidden", !visible);
+}
+
+// --- clear helpers ---
+function clearPermitView() {
+  // Atomisk: skjul result og vis empty-state, rydd alt innhold
+  setPermitResultsVisible(false);
+  setPermitEmptyStateVisible(true);
+
+  // Noen prosjekter har både "permitEmpty" (legacy) og permitEmptyState (ny)
+  const empty = $("permitEmpty");
+  if (empty) empty.textContent = "";
+
+  const card = $("permitCard");
+  if (card) {
+    card.classList.add("hidden");
+    // valgfritt: card.innerHTML = "";
+  }
+
+  const tbody = safeEl("permitHistoryTable").querySelector("tbody");
+  if (!tbody) throw new Error("Mangler <tbody> i #permitHistoryTable");
+  tbody.innerHTML = "";
+
+  const reasonTh = $("permitReasonTh");
+  if (reasonTh) reasonTh.style.display = ""; // default reset
+}
+
+function clearOwnerView() {
+  safeEl("ownerEmpty").textContent = "";
+  safeEl("ownerCard").classList.add("hidden");
+
+  const a = safeEl("ownerActiveTable").querySelector("tbody");
+  const h = safeEl("ownerHistoryTable").querySelector("tbody");
+  if (!a) throw new Error("Mangler <tbody> i #ownerActiveTable");
+  if (!h) throw new Error("Mangler <tbody> i #ownerHistoryTable");
+  a.innerHTML = "";
+  h.innerHTML = "";
+}
 
 // --- sort state (NOW) ---
 const sortState = {
@@ -184,10 +204,7 @@ const sortState = {
 // --- load db ---
 async function loadDatabase() {
   setStatus("Laster database…");
-  console.log("DB lastet – setStatus kjørt");
-
   setMeta("");
-
 
   if (!SQL) {
     SQL = await initSqlJs({
@@ -208,9 +225,6 @@ async function loadDatabase() {
   schema.permit_snapshot_has_art = hasColumn("permit_snapshot", "art");
 
   const snap = one(`SELECT MAX(snapshot_date) AS max_date, COUNT(*) AS n FROM snapshots;`);
-  const pc = one(`SELECT COUNT(*) AS n FROM permit_current;`);
-  const oh = one(`SELECT COUNT(*) AS n FROM ownership_history;`);
-
   setStatus("DB lastet", "ok");
 
   const snapIso = snap?.max_date ? String(snap.max_date).slice(0, 10) : "";
@@ -221,7 +235,6 @@ async function loadDatabase() {
       ? `Visningen senest oppdatert mot Akvakulturregisteret: ${snapNo}`
       : "Visningen senest oppdatert mot Akvakulturregisteret: (ukjent dato)"
   );
-
 
   renderRoute();
 }
@@ -234,17 +247,16 @@ function renderNow() {
   const q = safeEl("nowSearch").value.trim().toLowerCase();
   const only = safeEl("onlyGrunnrente").checked;
 
-  const baseSql = `
+  const rows = execAll(`
     SELECT
       permit_key AS permit_key,
       owner_name AS owner_name,
       owner_identity AS owner_identity,
-      owner_orgnr AS owner_orgnr
+      owner_orgnr AS owner_orgnr,
+      grunnrente_pliktig AS grunnrente_pliktig
     FROM permit_current
     ${only ? "WHERE grunnrente_pliktig = 1" : ""}
-    ORDER BY permit_key
-  `;
-  const rows = execAll(baseSql);
+  `);
 
   const filtered = q
     ? rows.filter(r =>
@@ -255,9 +267,16 @@ function renderNow() {
       )
     : rows;
 
+  // sort (client-side)
+  const { key, dir } = sortState.now;
+  filtered.sort((a, b) => {
+    const av = String(a[key] ?? "");
+    const bv = String(b[key] ?? "");
+    return av.localeCompare(bv, "nb", { numeric: true, sensitivity: "base" }) * dir;
+  });
+
   safeEl("nowSummary").textContent =
     `Antall tillatelser i visningen: ${filtered.length}` + (only ? " (grunnrentepliktig)" : "");
-
 
   const tbody = safeEl("nowTable").querySelector("tbody");
   if (!tbody) throw new Error("Mangler <tbody> i #nowTable");
@@ -273,13 +292,12 @@ function renderNow() {
       ? String(r.owner_orgnr).trim()
       : String(r.owner_identity ?? "");
 
-    // Robust: lenk kun hvis owner_identity finnes
     const ownerIdent = (r.owner_identity && String(r.owner_identity).trim())
       ? String(r.owner_identity).trim()
       : "";
 
     tr.innerHTML = `
-      <td><a class="link" href="#/permit/${encodeURIComponent(r.permit_key)}">${escapeHtml(r.permit_key)}</a></td>
+      <td><a class="link" href="#/permit/${encodeURIComponent(String(r.permit_key ?? ""))}">${escapeHtml(r.permit_key)}</a></td>
       <td>${escapeHtml(r.owner_name)}</td>
       <td>${
         ownerIdent
@@ -307,51 +325,51 @@ function renderPermit(permitKey) {
   setActiveTab("tab-permit");
   showView("view-permit");
 
-  setPermitResultsVisible(false); 
-
+  // Default empty state (før vi vet noe)
   setPermitEmptyStateContent({
-  icon: "🔍",
-  title: "Søk etter tillatelse",
-  text: "Skriv et tillatelsesnummer i feltet over for å se detaljer og historikk."
+    icon: "🔍",
+    title: "Søk etter tillatelse",
+    text: "Skriv et tillatelsesnummer i feltet over for å se detaljer og historikk."
   });
 
-  
-  safeEl("permitEmpty").textContent = "";
-  const pht = safeEl("permitHistoryTable").querySelector("tbody");
-  if (!pht) throw new Error("Mangler <tbody> i #permitHistoryTable");
-  pht.innerHTML = "";
-  safeEl("permitCard").classList.add("hidden");
+  // Rydd alltid først (hindrer “hengende” forrige resultat hvis vi feiler underveis)
+  clearPermitView();
 
-  if (permitKey) safeEl("permitInput").value = permitKey;
+  // sync input-felt med route
+  if (permitKey != null) safeEl("permitInput").value = String(permitKey);
 
   const inputEl = safeEl("permitInput");
-  const keyTrim = String(permitKey || "").trim();
+  const raw = String(permitKey || "");
 
-  if (!keyTrim) {
-  clearPermitView();
-  setPermitEmptyStateVisible(true);
-  return;
-}
-
-
-
-  if (isNineDigits(keyTrim)) {
-    clearPermitView();
-    safeEl("permitEmpty").textContent =
-      "Dette ser ut som et org.nr. (9 siffer). Bruk fanen Innehaver for org.nr., eller skriv et tillatelsesnr. (f.eks. H-F-0910).";
+  // Tom route/input
+  const norm = normalizePermitKey(raw);
+  if (!norm) {
+    // allerede ryddet og vist empty state
     return;
   }
 
-  permitKey = keyTrim;
+  // Hvis noen skriver orgnr i permit-feltet
+  if (isNineDigits(raw)) {
+    const msg = "Dette ser ut som et org.nr. (9 siffer). Bruk fanen Innehaver for org.nr., eller skriv et tillatelsesnr. (f.eks. H-F-0910).";
+    const legacy = $("permitEmpty");
+    if (legacy) legacy.textContent = msg;
+
+    setPermitEmptyStateContent({
+      icon: "ℹ️",
+      title: "Dette ser ut som org.nr.",
+      text: msg
+    });
+    setPermitEmptyStateVisible(true);
+    return;
+  }
+
+  permitKey = norm;
   inputEl.value = permitKey;
-  setPermitResultsVisible(true);
-  setPermitEmptyStateVisible(false);
 
   const permitUrl =
-  `https://sikker.fiskeridir.no/akvakulturregisteret/web/licenses/${encodeURIComponent(permitKey)}`;
+    `https://sikker.fiskeridir.no/akvakulturregisteret/web/licenses/${encodeURIComponent(permitKey)}`;
 
-
-  // Alias ALT vi bruker, og gjør art schema-safe
+  // --- Queries (normalisert match i SQL) ---
   const now = one(`
     SELECT
       permit_key AS permit_key,
@@ -363,10 +381,9 @@ function renderPermit(permitKey) {
       ${schema.permit_current_has_art ? "art AS art" : "NULL AS art"},
       row_json AS row_json
     FROM permit_current
-    WHERE permit_key = ?;
+    WHERE UPPER(REPLACE(TRIM(permit_key), ' ', '')) = ?;
   `, [permitKey]);
 
-  // Alias datoer eksplisitt (schema-safe for sql.js keys)
   const hist = execAll(`
     SELECT
       valid_from AS valid_from,
@@ -377,127 +394,119 @@ function renderPermit(permitKey) {
       owner_identity AS owner_identity,
       tidsbegrenset AS tidsbegrenset
     FROM ownership_history
-    WHERE permit_key = ?
+    WHERE UPPER(REPLACE(TRIM(permit_key), ' ', '')) = ?
     ORDER BY date(valid_from), id;
   `, [permitKey]);
 
-  // Skal vi vise Årsak-kolonnen?
-let showReasonColumn = false;
-
-for (let i = 0; i < hist.length; i++) {
-  const r = hist[i];
-  const next = hist[i + 1] || null;
-
-  const validTo = iso10(r.valid_to);
-  const tb = iso10(r.tidsbegrenset);
-
-  let reason = "";
-  if (!validTo) {
-    reason = "";
-  } else if (tb && tb === validTo) {
-    reason = `Utløpt (tidsbegrenset ${tb})`;
-  } else if (next) {
-    reason = "Overført / ny periode";
-  } else {
-    reason = "Avsluttet";
-  }
-
-  if (reason) {
-    showReasonColumn = true;
-    break;
-  }
-}
-const reasonTh = document.getElementById("permitReasonTh");
-if (reasonTh) {
-  reasonTh.style.display = showReasonColumn ? "" : "none";
-}
-
-
-
+  // Ingen treff
   if (!now && hist.length === 0) {
-  clearPermitView();
+    setPermitEmptyStateContent({
+      icon: "⚠️",
+      title: "Ingen tillatelser funnet",
+      text: `Fant ingen tillatelser med nummeret ${permitKey}.`
+    });
+    setPermitEmptyStateVisible(true);
+    return;
+  }
 
-  setPermitEmptyStateContent({
-    icon: "⚠️",
-    title: "Ingen tillatelser funnet",
-    text: `Fant ingen tillatelser med nummeret ${permitKey}.`
-  });
+  // Vi har data -> vis result-layout først nå
+  setPermitResultsVisible(true);
+  setPermitEmptyStateVisible(false);
 
-  setPermitEmptyStateVisible(true);
-  return;
-}
+  // Skal vi vise Årsak-kolonnen i permit-historikk?
+  let showReasonColumn = false;
+  for (let i = 0; i < hist.length; i++) {
+    const r = hist[i];
+    const next = hist[i + 1] || null;
 
+    const validTo = iso10(r.valid_to);
+    const tb = iso10(r.tidsbegrenset);
 
+    let reason = "";
+    if (!validTo) {
+      reason = "";
+    } else if (tb && tb === validTo) {
+      reason = `Utløpt (tidsbegrenset ${tb})`;
+    } else if (next) {
+      reason = "Overført / ny periode";
+    } else {
+      reason = "Avsluttet";
+    }
+
+    if (reason) { showReasonColumn = true; break; }
+  }
+
+  const reasonTh = $("permitReasonTh");
+  if (reasonTh) reasonTh.style.display = showReasonColumn ? "" : "none";
+
+  // --- Render card ---
   const card = safeEl("permitCard");
   card.classList.remove("hidden");
 
   if (now) {
-    // art: bruk aggregert DB-kolonne hvis den finnes, ellers fallback til row_json["ART"]
-    // art: bruk aggregert DB-kolonne hvis den finnes, ellers fallback til row_json["ART"]
-let rowDict = {};
-try { rowDict = now.row_json ? JSON.parse(now.row_json) : {}; } catch (e) { rowDict = {}; }
+    let rowDict = {};
+    try { rowDict = now.row_json ? JSON.parse(now.row_json) : {}; } catch { rowDict = {}; }
 
-const artText = (now.art && String(now.art).trim()) ? now.art : (rowDict["ART"] ?? "");
-const artHtml = artText ? escapeHtml(artText) : "";
+    const artText = (now.art && String(now.art).trim()) ? now.art : (rowDict["ART"] ?? "");
+    const artHtml = artText ? escapeHtml(artText) : "";
 
-// Ekstra felt i kortet
-const formal = (rowDict["FORMÅL"] ?? "").toString().trim();
-const produksjonsstadium = (rowDict["PRODUKSJONSSTADIUM"] ?? rowDict["PRODUKSJONSFORM"] ?? "").toString().trim();
+    const formal = (rowDict["FORMÅL"] ?? "").toString().trim();
+    const produksjonsstadium = (rowDict["PRODUKSJONSSTADIUM"] ?? rowDict["PRODUKSJONSFORM"] ?? "").toString().trim();
 
-const kapRaw = (rowDict["TILL_KAP"] ?? "").toString().trim();
-const enh = (rowDict["TILL_ENHET"] ?? "").toString().trim();
+    const kapRaw = (rowDict["TILL_KAP"] ?? "").toString().trim();
+    const enh = (rowDict["TILL_ENHET"] ?? "").toString().trim();
 
-let kap = kapRaw;
-if (kapRaw && /^-?\d+([.,]\d+)?$/.test(kapRaw)) {
-  const num = Number(kapRaw.replace(",", "."));
-  if (Number.isFinite(num)) {
-    // Hvis desimaldelen er .00 → vis heltall
-    kap = Number.isInteger(num) ? String(Math.trunc(num)) : String(num).replace(".", ",");
-  }
-}
+    let kap = kapRaw;
+    if (kapRaw && /^-?\d+([.,]\d+)?$/.test(kapRaw)) {
+      const num = Number(kapRaw.replace(",", "."));
+      if (Number.isFinite(num)) {
+        kap = Number.isInteger(num) ? String(Math.trunc(num)) : String(num).replace(".", ",");
+      }
+    }
+    const kapasitet = kap ? `${kap}${enh ? " " + enh : ""}` : "";
 
-const kapasitet = kap ? `${kap}${enh ? " " + enh : ""}` : "";
+    const prodOmrRaw = (rowDict["PROD_OMR"] ?? "").toString().trim();
+    const prodOmr = prodOmrRaw ? prodOmrRaw : "N/A";
 
+    const grunnrente = Number(now.grunnrente_pliktig) === 1;
+    const grunnPillClass = grunnrente ? "pill--blue" : "pill--yellow";
+    const grunnPillText = grunnrente ? "Grunnrentepliktig" : "Ikke grunnrentepliktig";
 
-const prodOmrRaw = (rowDict["PROD_OMR"] ?? "").toString().trim();
-const prodOmr = prodOmrRaw ? prodOmrRaw : "N/A";
+    const ownerIdent = String(now.owner_identity ?? "").trim();
 
-// Grunnrente-pill
-const grunnrente = Number(now.grunnrente_pliktig) === 1;
-const grunnPillClass = grunnrente ? "pill--blue" : "pill--yellow";
-const grunnPillText = grunnrente ? "Grunnrentepliktig" : "Ikke grunnrentepliktig";
+    card.innerHTML = `
+      <div>
+        <a href="${permitUrl}" target="_blank" rel="noopener noreferrer" class="permit-title-link">
+          ${escapeHtml(now.permit_key)}
+        </a>
+      </div>
 
-card.innerHTML = `
-  <div>
-    <a href="${permitUrl}" target="_blank" rel="noopener noreferrer" class="permit-title-link">
-      ${escapeHtml(now.permit_key)}
-    </a>
-  </div>
+      <div class="pills">
+        <span class="pill pill--green">Gjeldende status</span>
+        <span class="pill ${grunnPillClass}">${grunnPillText}</span>
+      </div>
 
-  <div class="pills">
-    <span class="pill pill--green">Gjeldende status</span>
-    <span class="pill ${grunnPillClass}">${grunnPillText}</span>
-  </div>
+      <div style="margin-top:10px">
+        <div><span class="muted">Eier:</span> ${escapeHtml(now.owner_name)}</div>
+        <div><span class="muted">Org.nr.:</span>
+          ${ownerIdent
+            ? `<a class="link" href="#/owner/${encodeURIComponent(ownerIdent)}">${escapeHtml(ownerIdent)}</a>`
+            : `${escapeHtml(ownerIdent)}`
+          }
+        </div>
 
-  <div style="margin-top:10px">
-    <div><span class="muted">Eier:</span> ${escapeHtml(now.owner_name)}</div>
-    <div><span class="muted">Org.nr.:</span>
-      <a class="link" href="#/owner/${encodeURIComponent(now.owner_identity)}">${escapeHtml(now.owner_identity)}</a>
-    </div>
+        ${artText ? `<div style="margin-top:8px"><span class="muted">Arter:</span> ${artHtml}</div>` : ""}
 
-    ${artText ? `<div style="margin-top:8px"><span class="muted">Arter:</span> ${artHtml}</div>` : ""}
-
-    <div style="margin-top:10px">
-      <div><span class="muted">Formål:</span> ${escapeHtml(formal || "")}</div>
-      <div><span class="muted">Produksjonsstadium:</span> ${escapeHtml(produksjonsstadium || "")}</div>
-      <div><span class="muted">Tillatelseskapasitet:</span> ${escapeHtml(kapasitet || "")}</div>
-      <div><span class="muted">Produksjonsområde:</span> ${escapeHtml(prodOmr)}</div>
-    </div>
-  </div>
-`;
-
+        <div style="margin-top:10px">
+          <div><span class="muted">Formål:</span> ${escapeHtml(formal || "")}</div>
+          <div><span class="muted">Produksjonsstadium:</span> ${escapeHtml(produksjonsstadium || "")}</div>
+          <div><span class="muted">Tillatelseskapasitet:</span> ${escapeHtml(kapasitet || "")}</div>
+          <div><span class="muted">Produksjonsområde:</span> ${escapeHtml(prodOmr)}</div>
+        </div>
+      </div>
+    `;
   } else {
-    // not active in permit_current => show last known from history
+    // Ikke aktiv i permit_current -> bygg kort fra historikk
     const last = hist[hist.length - 1];
     const lastTo = iso10(last.valid_to);
     const tb = iso10(last.tidsbegrenset);
@@ -518,7 +527,7 @@ card.innerHTML = `
       const lastSnap = one(`
         SELECT art AS art
         FROM permit_snapshot
-        WHERE permit_key = ?
+        WHERE UPPER(REPLACE(TRIM(permit_key), ' ', '')) = ?
         ORDER BY snapshot_date DESC
         LIMIT 1;
       `, [permitKey]);
@@ -527,17 +536,23 @@ card.innerHTML = `
     }
     const artHtml = artText ? escapeHtml(artText) : "";
 
+    const lastOwnerIdent = String(last.owner_identity ?? "").trim();
+
     card.innerHTML = `
       <div>
         <a href="${permitUrl}" target="_blank" rel="noopener noreferrer" class="permit-title-link">
-          ${escapeHtml(now.permit_key)}
+          ${escapeHtml(permitKey)}
         </a>
       </div>
       <div class="muted">Ikke aktiv i siste snapshot${maxDate ? ` (${escapeHtml(displayDate(maxDate))})` : ""} • ${escapeHtml(endText)}</div>
+
       <div style="margin-top:8px">
         <div><span class="muted">Siste kjente eier:</span> ${escapeHtml(last.owner_name || "")}</div>
         <div><span class="muted">Org.nr.:</span>
-          <a class="link" href="#/owner/${encodeURIComponent(last.owner_identity)}">${escapeHtml(last.owner_identity || "")}</a>
+          ${lastOwnerIdent
+            ? `<a class="link" href="#/owner/${encodeURIComponent(lastOwnerIdent)}">${escapeHtml(lastOwnerIdent)}</a>`
+            : `${escapeHtml(lastOwnerIdent)}`
+          }
         </div>
         ${tb ? `<div><span class="muted">Tidsbegrenset:</span> ${escapeHtml(tb)}</div>` : ""}
         ${artText ? `<div style="margin-top:8px"><span class="muted">Arter:</span> ${artHtml}</div>` : ""}
@@ -545,7 +560,7 @@ card.innerHTML = `
     `;
   }
 
-  // render history table
+  // --- Render history table ---
   const tbody = safeEl("permitHistoryTable").querySelector("tbody");
   tbody.innerHTML = "";
 
@@ -566,25 +581,22 @@ card.innerHTML = `
     } else {
       reason = "Avsluttet";
     }
-    // reason (beregnes som før)
     if (!reason) reason = "--";
 
     const vf = displayDate(r.valid_from);
     const vtLabel = (r.valid_to_label === "Aktiv") ? "Aktiv" : displayDate(r.valid_to_label);
 
-    const tr = document.createElement("tr");
+    const ident = String(r.owner_identity ?? "").trim();
 
-    // NB: IKKE skriv ut owner_orgnr her. Kun owner_name og owner_identity.
+    const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${escapeHtml(vf)}</td>
       <td>${escapeHtml(vtLabel)}</td>
       ${showReasonColumn ? `<td class="muted">${escapeHtml(reason)}</td>` : ""}
       <td>${escapeHtml(r.owner_name || "")}</td>
-      <td><a class="link" href="#/owner/${encodeURIComponent(r.owner_identity)}">${escapeHtml(r.owner_identity || "")}</a></td>
+      <td>${ident ? `<a class="link" href="#/owner/${encodeURIComponent(ident)}">${escapeHtml(ident)}</a>` : ""}</td>
     `;
-
     tbody.appendChild(tr);
-
   }
 }
 
@@ -593,35 +605,26 @@ function renderOwner(ownerIdentity) {
   setActiveTab("tab-owner");
   showView("view-owner");
 
-  safeEl("ownerEmpty").textContent = "";
-  const oat = safeEl("ownerActiveTable").querySelector("tbody");
-  if (!oat) throw new Error("Mangler <tbody> i #ownerActiveTable");
-  oat.innerHTML = "";
-  const oht = safeEl("ownerHistoryTable").querySelector("tbody");
-  if (!oht) throw new Error("Mangler <tbody> i #ownerHistoryTable");
-  oht.innerHTML = "";
-  safeEl("ownerCard").classList.add("hidden");
+  clearOwnerView();
 
-  if (ownerIdentity) safeEl("ownerInput").value = ownerIdentity;
+  if (ownerIdentity != null) safeEl("ownerInput").value = String(ownerIdentity);
 
   const inputEl = safeEl("ownerInput");
   const identTrim = String(ownerIdentity || "").trim();
 
   if (!identTrim) {
-    clearOwnerView();
     safeEl("ownerEmpty").textContent =
       "Skriv et org.nr. (9 siffer) i feltet over, eller klikk en eier fra Nå-status/historikk.";
     return;
   }
 
   if (!isNineDigits(identTrim)) {
-    clearOwnerView();
     safeEl("ownerEmpty").textContent =
       "Ugyldig org.nr. Skriv et tall med 9 siffer.";
     return;
   }
 
-  ownerIdentity = identTrim;
+  ownerIdentity = identTrim.replace(/\s+/g, "");
   inputEl.value = ownerIdentity;
 
   const stats = one(`
@@ -636,7 +639,6 @@ function renderOwner(ownerIdentity) {
   `, [ownerIdentity]);
 
   if (!stats) {
-    clearOwnerView();
     safeEl("ownerEmpty").textContent = `Fant ikke org.nr.: ${ownerIdentity}`;
     return;
   }
@@ -682,7 +684,7 @@ function renderOwner(ownerIdentity) {
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td><a class="link" href="#/permit/${encodeURIComponent(r.permit_key)}">${escapeHtml(r.permit_key)}</a></td>
+      <td><a class="link" href="#/permit/${encodeURIComponent(String(r.permit_key ?? ""))}">${escapeHtml(r.permit_key)}</a></td>
       <td>${escapeHtml(art)}</td>
       <td>${escapeHtml(formal)}</td>
       <td>${escapeHtml(produksjonsform)}</td>
@@ -709,34 +711,6 @@ function renderOwner(ownerIdentity) {
   const histBody = safeEl("ownerHistoryTable").querySelector("tbody");
   histBody.innerHTML = "";
 
-  // Skal vi vise Årsak-kolonnen?
-let showReasonColumn = false;
-
-for (let i = 0; i < hist.length; i++) {
-  const r = hist[i];
-  const next = hist[i + 1] || null;
-
-  const validTo = iso10(r.valid_to);
-  const tb = iso10(r.tidsbegrenset);
-
-  let reason = "";
-  if (!validTo) {
-    reason = "";
-  } else if (tb && tb === validTo) {
-    reason = `Utløpt (tidsbegrenset ${tb})`;ƒ
-  } else if (next) {
-    reason = "Overført / ny periode";
-  } else {
-    reason = "Avsluttet";
-  }
-
-  if (reason) {
-    showReasonColumn = true;
-    break;
-  }
-}
-
-
   for (let i = 0; i < hist.length; i++) {
     const r = hist[i];
     const next = hist[i + 1] || null;
@@ -755,13 +729,14 @@ for (let i = 0; i < hist.length; i++) {
     } else {
       reason = "Avsluttet";
     }
+    if (!reason) reason = "--";
 
     const vf = displayDate(r.valid_from);
     const vtLabel = (r.valid_to_label === "Aktiv") ? "Aktiv" : displayDate(r.valid_to_label);
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td><a class="link" href="#/permit/${encodeURIComponent(r.permit_key)}">${escapeHtml(r.permit_key)}</a></td>
+      <td><a class="link" href="#/permit/${encodeURIComponent(String(r.permit_key ?? ""))}">${escapeHtml(r.permit_key)}</a></td>
       <td>${escapeHtml(vf)}</td>
       <td>${escapeHtml(vtLabel)}</td>
       <td class="muted">${escapeHtml(reason)}</td>
@@ -813,7 +788,7 @@ function wireEvents() {
   });
   safeEl("onlyGrunnrente").addEventListener("change", () => renderNow());
 
-  // NOW sorting via data-sort headers (safe even if headers don't have data-sort)
+  // NOW sorting via data-sort headers
   document.querySelectorAll("#nowTable thead th[data-sort]").forEach(th => {
     th.addEventListener("click", () => {
       const key = th.getAttribute("data-sort");
@@ -828,19 +803,31 @@ function wireEvents() {
 
   // PERMIT actions
   safeEl("permitGo").addEventListener("click", () => {
-    const key = safeEl("permitInput").value.trim();
-    if (!key) {
+    const raw = safeEl("permitInput").value;
+
+    if (!String(raw || "").trim()) {
       clearPermitView();
-      safeEl("permitEmpty").textContent = "Skriv et tillatelsesnr. (f.eks. H-F-0910).";
+      setPermitEmptyStateContent({
+        icon: "🔍",
+        title: "Søk etter tillatelse",
+        text: "Skriv et tillatelsesnr. (f.eks. H-F-0910)."
+      });
+      setPermitEmptyStateVisible(true);
       return;
     }
-    if (isNineDigits(key)) {
+
+    if (isNineDigits(raw)) {
       clearPermitView();
-      safeEl("permitEmpty").textContent =
-        "Dette er et org.nr. (9 siffer). Bruk fanen Innehaver for org.nr.";
+      setPermitEmptyStateContent({
+        icon: "ℹ️",
+        title: "Dette ser ut som org.nr.",
+        text: "Dette er et org.nr. (9 siffer). Bruk fanen Innehaver for org.nr."
+      });
+      setPermitEmptyStateVisible(true);
       return;
     }
-    toHashPermit(key);
+
+    toHashPermit(raw);
   });
 
   safeEl("permitInput").addEventListener("keydown", (e) => {
@@ -849,14 +836,18 @@ function wireEvents() {
 
   // Tøm permit-visning når input slettes
   safeEl("permitInput").addEventListener("input", (e) => {
-  const v = e.target.value.trim();
-  if (!v) {
-    clearPermitView();
-    setPermitEmptyStateVisible(true); // <-- legg til (ofte overflødig, men gjør det bombesikkert)
-    location.hash = "#/permit";
+    const v = String(e.target.value || "").trim();
+    if (!v) {
+      clearPermitView();
+      setPermitEmptyStateContent({
+        icon: "🔍",
+        title: "Søk etter tillatelse",
+        text: "Skriv et tillatelsesnummer i feltet over for å se detaljer og historikk."
+      });
+      setPermitEmptyStateVisible(true);
+      location.hash = "#/permit";
     }
   });
-
 
   // OWNER actions
   safeEl("ownerGo").addEventListener("click", () => {
@@ -906,4 +897,3 @@ function showError(err) {
     showError(e);
   }
 })();
-
