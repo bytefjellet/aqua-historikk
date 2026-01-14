@@ -378,3 +378,21 @@ a:visited { color: inherit; }
   line-height: 1.4;
 }
 
+/* Tom-tilstand – mer dempet */
+.empty-state {
+  color: #9ca3af;              /* lysere grå enn --muted */
+}
+
+.empty-icon {
+  font-size: 2rem;             /* litt mindre */
+  opacity: 0.6;
+}
+
+.empty-title {
+  color: #6b7280;              /* dempet grå */
+  font-weight: 500;            /* mindre tung */
+}
+
+.empty-text {
+  color: #9ca3af;
+}
