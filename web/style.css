@@ -303,4 +303,23 @@ a:visited { color: inherit; }
 
   white-space: nowrap;
 }
+/* Hover-indikator for ikke-aktive tabs */
+.tab {
+  cursor: pointer; /* viser at det er klikkbart */
+}
+
+.tab:not(.active):hover {
+  color: var(--text);
+}
+
+.tab:not(.active):hover::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -10px;      /* samme nivå som active underline */
+  height: 2px;
+  border-radius: 999px;
+  background: var(--border);
+}
 
