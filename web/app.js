@@ -497,10 +497,16 @@ function renderPermit(permitKey) {
 
   // Tidsbegrenset for kort: siste ikke-tomme i historikk
   let tidsbegrensetCard = "";
-  for (let i = hist.length - 1; i >= 0; i--) {
-    const tb = iso10(hist[i].tidsbegrenset);
-    if (tb) { tidsbegrensetCard = tb; break; }
-  }
+for (let i = hist.length - 1; i >= 0; i--) {
+  const tb = iso10(hist[i].tidsbegrenset);
+  if (tb) { tidsbegrensetCard = tb; break; }
+}
+
+// Formater for visning: "2025-06-25" -> "25. juni 2025"
+const tidsbegrensetCardDisplay = tidsbegrensetCard
+  ? formatNorwegianDate(tidsbegrensetCard)
+  : "";
+
 
   // --- Card data ---
   if (now) {
@@ -543,7 +549,7 @@ function renderPermit(permitKey) {
       produksjonsstadium,
       kapasitet,
       prodOmr,
-      tidsbegrenset: tidsbegrensetCard,
+      tidsbegrenset: tidsbegrensetCardDisplay,
     });
   } else {
     const last = hist[hist.length - 1];
@@ -561,8 +567,7 @@ function renderPermit(permitKey) {
     const maxSnap = one(`SELECT MAX(snapshot_date) AS max_date FROM snapshots;`);
     const maxDate = maxSnap?.max_date ? String(maxSnap.max_date) : "";
 
-    const subline =
-      `Ikke aktiv i siste snapshot${maxDate ? ` (${displayDate(maxDate)})` : ""} • ${endText}`;
+    const subline = "";
 
     // Hent siste snapshot for ekstra detaljer (hvis mulig)
     let snapRow = null;
@@ -604,10 +609,11 @@ function renderPermit(permitKey) {
     const prodOmrRaw = String(snapDict["PROD_OMR"] ?? "").trim();
     const prodOmr = prodOmrRaw ? prodOmrRaw : "N/A";
 
-    let grunnrenteValue = null;
-    if (snapRow && snapRow.grunnrente_pliktig != null && snapRow.grunnrente_pliktig !== "") {
-      grunnrenteValue = Number(snapRow.grunnrente_pliktig) === 1;
-    }
+    let grunnrenteValue = false;
+      if (snapRow && snapRow.grunnrente_pliktig != null && snapRow.grunnrente_pliktig !== "") {
+        grunnrenteValue = Number(snapRow.grunnrente_pliktig) === 1;
+      }
+
 
     renderPermitCardUnified({
       permitKey,
@@ -622,7 +628,7 @@ function renderPermit(permitKey) {
       produksjonsstadium,
       kapasitet,
       prodOmr,
-      tidsbegrenset: tidsbegrensetCard,
+      tidsbegrenset: tidsbegrensetCardDisplay,
     });
   }
 
