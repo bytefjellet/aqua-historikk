@@ -122,12 +122,19 @@ function isNineDigits(s) {
 }
 
 function clearPermitView() {
-  setPermitResultsVisible(false); // <-- NY
-  safeEl("permitEmpty").textContent = "";
+  setPermitResultsVisible(false);         // <-- skjul hele panelet (kort + tabell)
+  safeEl("permitEmpty").textContent = ""; // <-- ingen tekst under tabellen
   safeEl("permitCard").classList.add("hidden");
+
   const tbody = safeEl("permitHistoryTable").querySelector("tbody");
   if (!tbody) throw new Error("Mangler <tbody> i #permitHistoryTable");
   tbody.innerHTML = "";
+}
+
+
+function setPermitResultsVisible(visible) {
+  const split = safeEl("view-permit").querySelector(".split");
+  if (split) split.classList.toggle("hidden", !visible);
 }
 
 /* NY helper – LEGG DENNE INN */
@@ -293,11 +300,10 @@ function renderPermit(permitKey) {
   const keyTrim = String(permitKey || "").trim();
 
   if (!keyTrim) {
-    clearPermitView();
-    safeEl("permitEmpty").textContent =
-      "Skriv en tillatelse i feltet over (f.eks. H-F-0910), eller klikk en tillatelse fra Nå-status.";
-    return;
+  clearPermitView();
+  return;
   }
+
 
   if (isNineDigits(keyTrim)) {
     clearPermitView();
@@ -784,11 +790,10 @@ function wireEvents() {
   safeEl("permitInput").addEventListener("input", (e) => {
     const v = e.target.value.trim();
     if (!v) {
-      clearPermitView();
-      safeEl("permitEmpty").textContent =
-        "Skriv en tillatelse i feltet over (f.eks. H-F-0910), eller klikk en tillatelse fra Nå-status.";
-      location.hash = "#/permit";
+    clearPermitView();
+    location.hash = "#/permit";
     }
+
   });
 
   // OWNER actions
