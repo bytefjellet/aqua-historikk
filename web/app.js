@@ -162,6 +162,18 @@ function setPermitEmptyStateVisible(visible) {
   const el = document.getElementById("permitEmptyState");
   if (el) el.classList.toggle("hidden", !visible);
 }
+function setPermitEmptyStateContent({ icon, title, text }) {
+  const root = document.getElementById("permitEmptyState");
+  if (!root) return;
+
+  const iconEl = root.querySelector(".empty-icon");
+  const titleEl = root.querySelector(".empty-title");
+  const textEl  = root.querySelector(".empty-text");
+
+  if (iconEl && icon != null) iconEl.textContent = icon;
+  if (titleEl && title != null) titleEl.textContent = title;
+  if (textEl  && text  != null) textEl.textContent  = text;
+}
 
 
 // --- sort state (NOW) ---
@@ -297,6 +309,13 @@ function renderPermit(permitKey) {
 
   setPermitResultsVisible(false); 
 
+  setPermitEmptyStateContent({
+  icon: "🔍",
+  title: "Søk etter tillatelse",
+  text: "Skriv et tillatelsesnummer i feltet over for å se detaljer og historikk."
+  });
+
+  
   safeEl("permitEmpty").textContent = "";
   const pht = safeEl("permitHistoryTable").querySelector("tbody");
   if (!pht) throw new Error("Mangler <tbody> i #permitHistoryTable");
@@ -396,10 +415,18 @@ if (reasonTh) {
 
 
   if (!now && hist.length === 0) {
-    clearPermitView();
-    safeEl("permitEmpty").textContent = `Fant ikke permit_key: ${permitKey}`;
-    return;
-  }
+  clearPermitView();
+
+  setPermitEmptyStateContent({
+    icon: "⚠️",
+    title: "Ingen tillatelser funnet",
+    text: `Fant ingen tillatelser med nummeret ${permitKey}.`
+  });
+
+  setPermitEmptyStateVisible(true);
+  return;
+}
+
 
   const card = safeEl("permitCard");
   card.classList.remove("hidden");
