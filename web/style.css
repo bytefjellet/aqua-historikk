@@ -313,3 +313,5 @@ a:visited { color: inherit; }
 }
 html, body { overflow: visible !important; }
 .container, main, header { overflow: visible !important; }
+
+.tabs { outline: 3px solid red; }
