@@ -71,8 +71,8 @@ body {
   position: sticky;
   top: 0;
   z-index: 999;
-
   background: var(--surface);
+  box-shadow: 0 6px 16px rgba(0,0,0,.06);
 
   /* Ingen strek over (så det ikke blir linje mellom tittel og tabs) */
   border-top: none;
@@ -303,15 +303,4 @@ a:visited { color: inherit; }
 
   white-space: nowrap;
 }
-/* Sticky tabs (tving) */
-.tabs {
-  position: sticky !important;
-  top: 0;
-  z-index: 999 !important;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-}
-html, body { overflow: visible !important; }
-.container, main, header { overflow: visible !important; }
 
-.tabs { outline: 3px solid red; }
