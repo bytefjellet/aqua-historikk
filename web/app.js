@@ -122,14 +122,17 @@ function isNineDigits(s) {
 }
 
 function clearPermitView() {
-  setPermitResultsVisible(false);         // <-- skjul hele panelet (kort + tabell)
-  safeEl("permitEmpty").textContent = ""; // <-- ingen tekst under tabellen
+  setPermitResultsVisible(false);
+  setPermitEmptyStateVisible(true);   // <-- MÅ være her
+
+  safeEl("permitEmpty").textContent = "";
   safeEl("permitCard").classList.add("hidden");
 
   const tbody = safeEl("permitHistoryTable").querySelector("tbody");
   if (!tbody) throw new Error("Mangler <tbody> i #permitHistoryTable");
   tbody.innerHTML = "";
 }
+
 
 
 function setPermitResultsVisible(visible) {
@@ -307,8 +310,10 @@ function renderPermit(permitKey) {
 
   if (!keyTrim) {
   clearPermitView();
+  setPermitEmptyStateVisible(true);
   return;
-  }
+}
+
 
 
   if (isNineDigits(keyTrim)) {
@@ -806,13 +811,14 @@ function wireEvents() {
 
   // Tøm permit-visning når input slettes
   safeEl("permitInput").addEventListener("input", (e) => {
-    const v = e.target.value.trim();
-    if (!v) {
+  const v = e.target.value.trim();
+  if (!v) {
     clearPermitView();
+    setPermitEmptyStateVisible(true); // <-- legg til (ofte overflødig, men gjør det bombesikkert)
     location.hash = "#/permit";
     }
-
   });
+
 
   // OWNER actions
   safeEl("ownerGo").addEventListener("click", () => {
