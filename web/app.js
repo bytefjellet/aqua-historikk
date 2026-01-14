@@ -155,6 +155,12 @@ function clearOwnerView() {
   h.innerHTML = "";
 }
 
+function setPermitEmptyStateVisible(visible) {
+  const el = document.getElementById("permitEmptyState");
+  if (el) el.classList.toggle("hidden", !visible);
+}
+
+
 // --- sort state (NOW) ---
 const sortState = {
   now: { key: "permit_key", dir: 1 } // dir: 1 asc, -1 desc

@@ -353,4 +353,28 @@ a:visited { color: inherit; }
 }
 .hidden { display: none !important; }
 
+/* Tom-tilstand (Permit) */
+.empty-state {
+  margin: 48px auto 0;
+  max-width: 520px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.empty-icon {
+  font-size: 2.2rem;
+  margin-bottom: 12px;
+}
+
+.empty-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.empty-text {
+  font-size: .9rem;
+  line-height: 1.4;
+}
 
