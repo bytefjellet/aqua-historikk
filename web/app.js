@@ -220,7 +220,8 @@ function renderNow() {
     : rows;
 
   safeEl("nowSummary").textContent =
-    `Viser ${filtered.length} av ${rows.length} tillatelser` + (only ? " (grunnrentepliktig)" : "");
+    `Antall tillatelser i visningen: ${filtered.length}` + (only ? " (grunnrentepliktig)" : "");
+
 
   const tbody = safeEl("nowTable").querySelector("tbody");
   if (!tbody) throw new Error("Mangler <tbody> i #nowTable");
