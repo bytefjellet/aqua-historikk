@@ -487,20 +487,25 @@ card.innerHTML = `
     } else {
       reason = "Avsluttet";
     }
-    if (!reason) reson = "--";
+    // reason (beregnes som før)
+    if (!reason) reason = "--";
 
     const vf = displayDate(r.valid_from);
     const vtLabel = (r.valid_to_label === "Aktiv") ? "Aktiv" : displayDate(r.valid_to_label);
 
     const tr = document.createElement("tr");
+
+    // NB: IKKE skriv ut owner_orgnr her. Kun owner_name og owner_identity.
     tr.innerHTML = `
       <td>${escapeHtml(vf)}</td>
       <td>${escapeHtml(vtLabel)}</td>
-      <td class="muted">${escapeHtml(reason)}</td>
-      <td>${escapeHtml(r.owner_name)}</td>
-      <td><a class="link" href="#/owner/${encodeURIComponent(r.owner_identity)}">${escapeHtml(r.owner_identity)}</a></td>
+      ${showReasonColumn ? `<td class="muted">${escapeHtml(reason)}</td>` : ""}
+      <td>${escapeHtml(r.owner_name || "")}</td>
+      <td><a class="link" href="#/owner/${encodeURIComponent(r.owner_identity)}">${escapeHtml(r.owner_identity || "")}</a></td>
     `;
+
     tbody.appendChild(tr);
+
   }
 }
 
