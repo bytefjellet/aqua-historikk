@@ -410,4 +410,15 @@ a:visited { color: inherit; }
   content: " ↗";
   font-size: .9em;
 }
+.permit-title-link,
+.permit-title-link:visited {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.permit-title-link:hover,
+.permit-title-link:active {
+  color: var(--primary);
+  text-decoration-thickness: 2px;
+}
 

@@ -215,7 +215,7 @@ function renderPermitCardUnified({
   card.classList.remove("hidden");
 
   const statusPillClass = isActive ? "pill--green" : "pill--yellow";
-  const statusPillText  = isActive ? "Gjeldende status" : "Historisk";
+  const statusPillText  = isActive ? "Aktiv tillatelse" : "Historisk";
 
   let grunnPillClass = "pill--yellow";
   let grunnPillText = "Grunnrente: ukjent";
