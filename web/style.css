@@ -399,10 +399,15 @@ a:visited { color: inherit; }
 .permit-title-link {
   font-size: 1.1rem;
   font-weight: 700;
-  color: var(--text);
-  text-decoration: none;
+  color: var(--primary);        /* blå, samme som øvrige lenker */
+  text-decoration: underline;  /* alltid understreket */
 }
 
 .permit-title-link:hover {
-  text-decoration: underline;
+  text-decoration-thickness: 2px; /* litt tydeligere ved hover */
 }
+.permit-title-link::after {
+  content: " ↗";
+  font-size: .9em;
+}
+
