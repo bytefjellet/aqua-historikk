@@ -868,6 +868,7 @@ function parseHash() {
 }
 
 function renderRoute() {
+  console.log("renderRoute()", location.hash);
   if (!db) return;
   const r = parseHash();
   if (r.view === "now") return renderNow();
@@ -878,7 +879,11 @@ function renderRoute() {
 
 // --- events ---
 function wireEvents() {
-  window.addEventListener("hashchange", () => renderRoute());
+  window.addEventListener("hashchange", () => {
+  console.log("hashchange ->", location.hash);
+  renderRoute();
+});
+
 
   // NOW search (debounced)
   let nowTimer = null;
@@ -938,19 +943,28 @@ function wireEvents() {
 
   // OWNER actions
   safeEl("ownerGo").addEventListener("click", () => {
-    const ident = safeEl("ownerInput").value.trim();
-    if (!ident) {
-      clearOwnerView();
-      safeEl("ownerEmpty").textContent = "Skriv et org.nr. (9 siffer).";
-      return;
-    }
-    if (!isNineDigits(ident)) {
-      clearOwnerView();
-      safeEl("ownerEmpty").textContent = "Ugyldig org.nr. Skriv et tall med 9 siffer.";
-      return;
-    }
-    toHashOwner(ident);
-  });
+  console.log("ownerGo click");
+
+  const ident = safeEl("ownerInput").value.trim();
+  console.log("ownerGo ident:", ident);
+
+  if (!ident) {
+    clearOwnerView();
+    safeEl("ownerEmpty").textContent = "Skriv et org.nr. (9 siffer).";
+    return;
+  }
+  if (!isNineDigits(ident)) {
+    clearOwnerView();
+    safeEl("ownerEmpty").textContent = "Ugyldig org.nr. Skriv et tall med 9 siffer.";
+    return;
+  }
+
+  const norm = ident.replace(/\s+/g, "");
+  console.log("ownerGo -> hash", `#/owner/${norm}`);
+
+  toHashOwner(norm);
+});
+
 
   safeEl("ownerInput").addEventListener("keydown", (e) => {
     if (e.key === "Enter") safeEl("ownerGo").click();
