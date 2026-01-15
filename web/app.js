@@ -335,7 +335,7 @@ function renderPermitCardUnified({
   `;
 }
 
-// --- UNIFIED owner card renderer ---
+
 // --- UNIFIED owner card renderer ---
 function renderOwnerCardUnified({
   ownerName,
@@ -782,6 +782,37 @@ function renderPermit(permitKey) {
   }
 }
 
+let selectedOwnerFormal = null;
+
+function renderOwnerFormalButtons(countsByFormal) {
+  const root = document.getElementById("ownerFormalFilters");
+  if (!root) return;
+
+  root.innerHTML = "";
+
+  for (const formal of allFormals) {
+    const count = countsByFormal[formal] || 0;
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "button button--chip";
+    btn.textContent = `${formal} (${count})`;
+
+    if (selectedOwnerFormal === formal) {
+      btn.classList.add("active");
+    }
+
+    btn.addEventListener("click", () => {
+      selectedOwnerFormal =
+        selectedOwnerFormal === formal ? null : formal;
+
+      renderOwner(window.__currentOwnerIdentity);
+    });
+
+    root.appendChild(btn);
+  }
+}
+
 // --- OWNER view ---
 function renderOwner(ownerIdentity) {
   console.log("renderOwner()", ownerIdentity);
@@ -879,6 +910,22 @@ function renderOwner(ownerIdentity) {
     WHERE REPLACE(TRIM(owner_identity), ' ', '') = ?
     ORDER BY permit_key;
   `, [ownerIdentityNorm]);
+
+  // Husk hvem vi rendrer (brukes av knappene)
+  window.__currentOwnerIdentity = ownerIdentity;
+
+// Bygg telling per formål (etter ev. grunnrente-filter)
+  const countsByFormal = {};
+  for (const r of active) {
+    const d = parseJsonSafe(r.row_json);
+    const f = String(d["FORMÅL"] ?? "").trim();
+    if (!f) continue;
+    countsByFormal[f] = (countsByFormal[f] || 0) + 1;
+  }
+
+// Render formål-knapper
+  renderOwnerFormalButtons(countsByFormal);
+
 
   const grunnrenteActiveCount = active.reduce((acc, r) =>
     acc + (Number(r.grunnrente_pliktig) === 1 ? 1 : 0)
