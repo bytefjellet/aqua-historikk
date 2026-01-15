@@ -229,6 +229,22 @@ h3 { margin: 0 0 8px; }
 #view-permit .split-right > h3:first-child { display: none; }
 #view-owner .split-right > h3:first-child { display: none; }
 
+/* OWNER: kort over tabeller (ikke split) */
+.owner-results {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+.owner-card-wrap {
+  width: 100%;
+}
+
+.owner-tables h3 {
+  margin-top: 0;
+}
+
 /* =========================
    Tables
    ========================= */

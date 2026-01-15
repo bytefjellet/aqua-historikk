@@ -147,6 +147,29 @@ function valueOrDash(v) {
   return t ? t : "—";
 }
 
+function formatKapNoTrailing00(kapRaw) {
+  const t = String(kapRaw ?? "").trim();
+  if (!t) return "";
+
+  // normaliser til punktum for parsing
+  const s = t.replace(",", ".");
+  if (!/^-?\d+(\.\d+)?$/.test(s)) return t;
+
+  const num = Number(s);
+  if (!Number.isFinite(num)) return t;
+
+  // Hvis heltall (inkl. .00 / ,00) -> ingen desimaler
+  if (Number.isInteger(num)) return String(num);
+
+  // Ellers: fjern trailing nuller og bytt tilbake til komma
+  let out = String(num);
+  // noen ganger kan String(num) gi vitenskapelig notasjon; fallback:
+  if (out.includes("e") || out.includes("E")) out = num.toFixed(2);
+
+  out = out.replace(/(\.\d*?[1-9])0+$/u, "$1").replace(/\.0+$/u, "");
+  return out.replace(".", ",");
+}
+
 // --- PERMIT empty state helpers ---
 function setPermitEmptyStateVisible(visible) {
   const el = $("permitEmptyState");
@@ -191,9 +214,10 @@ function setOwnerEmptyStateContent({ icon, title, text }) {
 }
 
 function setOwnerResultsVisible(visible) {
-  const split = safeEl("view-owner").querySelector(".split");
-  if (split) split.classList.toggle("hidden", !visible);
+  const root = $("ownerResults");
+  if (root) root.classList.toggle("hidden", !visible);
 }
+
 
 // --- clear helpers ---
 function clearPermitView() {
@@ -854,11 +878,12 @@ function renderOwner(ownerIdentity) {
 
     const formal = String(rowDict["FORMÅL"] ?? "").trim();
     const produksjonsform = String(rowDict["PRODUKSJONSFORM"] ?? "").trim();
-    const kap = String(rowDict["TILL_KAP"] ?? "").trim();
+    const kapRaw = String(rowDict["TILL_KAP"] ?? "").trim();
     const enh = String(rowDict["TILL_ENHET"] ?? "").trim();
-    const prodOmr = String(rowDict["PROD_OMR"] ?? "").trim();
 
-    const kapasitet = kap ? `${kap}${enh ? " " + enh : ""}` : "";
+    const kapFmt = formatKapNoTrailing00(kapRaw);
+    const kapasitet = kapFmt ? `${kapFmt}${enh ? " " + enh : ""}` : "";
+
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
