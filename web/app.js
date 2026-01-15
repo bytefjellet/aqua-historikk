@@ -901,18 +901,22 @@ function renderOwner(ownerIdentity) {
 
   // Owner history table
   const hist = execAll(`
-    SELECT
-      permit_key AS permit_key,
-      valid_from AS valid_from,
-      valid_to   AS valid_to,
-      COALESCE(NULLIF(valid_to,''), 'Aktiv') AS valid_to_label,
-      owner_name AS owner_name,
-      owner_orgnr AS owner_orgnr,
-      tidsbegrenset AS tidsbegrenset
-    FROM ownership_history
-    WHERE REPLACE(TRIM(owner_identity), ' ', '') = ?
-    ORDER BY permit_key, date(valid_from), id;
-  `, [ownerIdentityNorm]);
+  SELECT
+    permit_key AS permit_key,
+    valid_from AS valid_from,
+    valid_to   AS valid_to,
+    COALESCE(NULLIF(valid_to,''), 'Aktiv') AS valid_to_label,
+    owner_name AS owner_name,
+    owner_orgnr AS owner_orgnr,
+    tidsbegrenset AS tidsbegrenset
+  FROM ownership_history
+  WHERE
+    REPLACE(TRIM(owner_identity), ' ', '') = ?
+    AND valid_to IS NOT NULL
+    AND valid_to <> ''
+  ORDER BY permit_key, date(valid_from), id;
+`, [ownerIdentityNorm]);
+
 
   const histBody = safeEl("ownerHistoryTable").querySelector("tbody");
   histBody.innerHTML = "";
