@@ -26,6 +26,13 @@ const schema = {
   permit_snapshot_has_row_json: false,
   permit_snapshot_has_grunnrente: false,
 };
+// --- Owner filter state ---
+const ownerFilters = {
+  formal: null, // valgt formål (string) eller null
+};
+
+// Liste over alle formål i DB (fra permit_current)
+let allFormals = []; // array av strings
 
 // --- helpers ---
 function $(id) { return document.getElementById(id); }
@@ -140,6 +147,11 @@ function isNineDigits(s) {
 
 function parseJsonSafe(s) {
   try { return s ? JSON.parse(s) : {}; } catch { return {}; }
+}
+
+function extractFormalFromRowJson(rowJsonText) {
+  const d = parseJsonSafe(rowJsonText);
+  return String(d["FORMÅL"] ?? "").trim();
 }
 
 function valueOrDash(v) {
@@ -387,12 +399,29 @@ async function loadDatabase() {
   if (db) db.close();
   db = new SQL.Database(new Uint8Array(buf));
 
-  schema.permit_current_has_art = hasColumn("permit_current", "art");
+    schema.permit_current_has_art = hasColumn("permit_current", "art");
   schema.permit_snapshot_has_art = hasColumn("permit_snapshot", "art");
   schema.permit_snapshot_has_row_json = hasColumn("permit_snapshot", "row_json");
   schema.permit_snapshot_has_grunnrente = hasColumn("permit_snapshot", "grunnrente_pliktig");
 
+  // Bygg liste over alle formål i databasen (fra permit_current.row_json)
+  try {
+    const rows = execAll(`SELECT row_json AS row_json FROM permit_current;`);
+    const set = new Set();
+    for (const r of rows) {
+      const f = extractFormalFromRowJson(r.row_json);
+      if (f) set.add(f);
+    }
+    allFormals = Array.from(set).sort((a, b) =>
+      a.localeCompare(b, "nb", { sensitivity: "base" })
+    );
+  } catch (e) {
+    console.warn("Kunne ikke bygge formål-liste:", e);
+    allFormals = [];
+  }
+
   const snap = one(`SELECT MAX(snapshot_date) AS max_date, COUNT(*) AS n FROM snapshots;`);
+
   setStatus("DB lastet", "ok");
 
   const snapIso = snap?.max_date ? String(snap.max_date).slice(0, 10) : "";
