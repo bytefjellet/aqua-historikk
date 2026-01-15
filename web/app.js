@@ -210,7 +210,9 @@ function renderPermitCardUnified({
   kapasitet,
   prodOmr,
   tidsbegrenset,        // "YYYY-MM-DD" eller ""
-}) {
+}) 
+
+{
   const card = safeEl("permitCard");
   card.classList.remove("hidden");
 
@@ -263,6 +265,34 @@ function renderPermitCardUnified({
     </div>
   `;
 }
+
+// --- UNIFIED owner card renderer (samme visuelle stil som permit-kort) ---
+function renderOwnerCardUnified({ ownerName, ownerIdentity, activeCount, totalPeriods }) {
+  const card = safeEl("ownerCard");
+  card.classList.remove("hidden");
+
+  const ident = String(ownerIdentity ?? "").trim();
+
+  card.innerHTML = `
+    <div style="font-size:1.1rem;font-weight:700">
+      ${escapeHtml(valueOrDash(ownerName))}
+    </div>
+
+    <div class="pills" style="margin-top:8px">
+      <span class="pill pill--green">Innehaver</span>
+      <span class="pill pill--blue">Org.nr.</span>
+    </div>
+
+    <div style="margin-top:10px">
+      <div><span class="muted">Org.nr.:</span> ${escapeHtml(ident || "—")}</div>
+      <div style="margin-top:8px">
+        <div><span class="muted">Aktive tillatelser:</span> ${escapeHtml(String(activeCount ?? 0))}</div>
+        <div><span class="muted">Historiske perioder:</span> ${escapeHtml(String(totalPeriods ?? 0))}</div>
+      </div>
+    </div>
+  `;
+}
+
 
 // --- sort state (NOW) ---
 const sortState = {
