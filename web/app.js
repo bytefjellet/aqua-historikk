@@ -870,32 +870,34 @@ function renderOwner(ownerIdentity) {
   activeBody.innerHTML = "";
 
   for (const r of activeDisplay) {
-    const rowDict = parseJsonSafe(r.row_json);
+  const rowDict = parseJsonSafe(r.row_json);
 
-    const art = (r.art && String(r.art).trim())
-      ? String(r.art).trim()
-      : String(rowDict["ART"] ?? "").trim();
+  const prodOmr = String(rowDict["PROD_OMR"] ?? "").trim();
 
-    const formal = String(rowDict["FORMÅL"] ?? "").trim();
-    const produksjonsform = String(rowDict["PRODUKSJONSFORM"] ?? "").trim();
-    const kapRaw = String(rowDict["TILL_KAP"] ?? "").trim();
-    const enh = String(rowDict["TILL_ENHET"] ?? "").trim();
+  const art = (r.art && String(r.art).trim())
+    ? String(r.art).trim()
+    : String(rowDict["ART"] ?? "").trim();
 
-    const kapFmt = formatKapNoTrailing00(kapRaw);
-    const kapasitet = kapFmt ? `${kapFmt}${enh ? " " + enh : ""}` : "";
+  const formal = String(rowDict["FORMÅL"] ?? "").trim();
+  const produksjonsform = String(rowDict["PRODUKSJONSFORM"] ?? "").trim();
+  const kapRaw = String(rowDict["TILL_KAP"] ?? "").trim();
+  const enh = String(rowDict["TILL_ENHET"] ?? "").trim();
 
+  const kapFmt = formatKapNoTrailing00(kapRaw);
+  const kapasitet = kapFmt ? `${kapFmt}${enh ? " " + enh : ""}` : "";
 
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td><a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(r.permit_key))}">${escapeHtml(r.permit_key)}</a></td>
-      <td>${escapeHtml(art)}</td>
-      <td>${escapeHtml(formal)}</td>
-      <td>${escapeHtml(produksjonsform)}</td>
-      <td>${escapeHtml(kapasitet)}</td>
-      <td>${escapeHtml(prodOmr || "N/A")}</td>
-    `;
-    activeBody.appendChild(tr);
-  }
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td><a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(r.permit_key))}">${escapeHtml(r.permit_key)}</a></td>
+    <td>${escapeHtml(art)}</td>
+    <td>${escapeHtml(formal)}</td>
+    <td>${escapeHtml(produksjonsform)}</td>
+    <td>${escapeHtml(kapasitet)}</td>
+    <td>${escapeHtml(prodOmr || "N/A")}</td>
+  `;
+  activeBody.appendChild(tr);
+}
+
 
   // Owner history table
   const hist = execAll(`
