@@ -599,28 +599,29 @@ const tidsbegrensetCardDisplay = tidsbegrensetCard
 
     const subline = "";
 
-    function renderOwnerCardUnified({ ownerName, ownerIdentity, activeCount, totalPeriods }) {
-      const card = safeEl("ownerCard");
-      card.classList.remove("hidden");
+    function renderOwnerCardUnified({ ownerName, ownerIdentity, activeCount, historicPermitCount }) {
+  const card = safeEl("ownerCard");
+  card.classList.remove("hidden");
 
-      const ident = String(ownerIdentity ?? "").trim();
+  const name = valueOrDash(ownerName);
+  const ident = String(ownerIdentity ?? "").trim();
 
-      card.innerHTML = `
-        <div style="font-size:1.1rem;font-weight:700">
-          ${escapeHtml(valueOrDash(ownerName))}
-        </div>
+  card.innerHTML = `
+    <div style="font-size:1.1rem;font-weight:700">
+      ${escapeHtml(name)}
+    </div>
 
-        <div class="pills" style="margin-top:8px">
-          <span class="pill pill--green">Innehaver</span>
-          <span class="pill pill--blue">Org.nr. ${escapeHtml(ident || "—")}</span>
-        </div>
+    <div style="margin-top:10px">
+      <div><span class="muted">Org.nr.:</span> ${escapeHtml(ident || "—")}</div>
 
-        <div style="margin-top:10px">
-          <div><span class="muted">Aktive tillatelser:</span> ${escapeHtml(String(activeCount ?? 0))}</div>
-          <div><span class="muted">Historiske perioder:</span> ${escapeHtml(String(totalPeriods ?? 0))}</div>
-        </div>
-      `;
-    }
+      <div style="margin-top:10px">
+        <div><span class="muted">Aktive tillatelser:</span> ${escapeHtml(String(activeCount ?? 0))}</div>
+        <div><span class="muted">Historiske tillatelser:</span> ${escapeHtml(String(historicPermitCount ?? 0))}</div>
+      </div>
+    </div>
+  `;
+}
+
 
 
     // Hent siste snapshot for ekstra detaljer (hvis mulig)
@@ -761,12 +762,24 @@ function renderOwner(ownerIdentity) {
   SELECT
     REPLACE(TRIM(owner_identity), ' ', '') AS owner_identity,
     MAX(owner_name) AS owner_name,
-    SUM(CASE WHEN valid_to IS NULL OR valid_to = '' THEN 1 ELSE 0 END) AS active_permits,
-    COUNT(*) AS total_periods
+
+    -- Antall aktive tillatelser: tell unike tillatelser der perioden er aktiv
+    COUNT(DISTINCT CASE
+      WHEN valid_to IS NULL OR valid_to = '' THEN permit_key
+      ELSE NULL
+    END) AS active_permits,
+
+    -- Antall historiske tillatelser: tell unike tillatelser der valid_to er satt
+    COUNT(DISTINCT CASE
+      WHEN valid_to IS NOT NULL AND valid_to <> '' THEN permit_key
+      ELSE NULL
+    END) AS historic_permits
+
   FROM ownership_history
   WHERE REPLACE(TRIM(owner_identity), ' ', '') = ?
   GROUP BY REPLACE(TRIM(owner_identity), ' ', '');
 `, [ownerIdentity]);
+
 
 
   if (!stats) {
@@ -778,8 +791,9 @@ function renderOwner(ownerIdentity) {
   ownerName: stats.owner_name || "(ukjent)",
   ownerIdentity: stats.owner_identity,
   activeCount: stats.active_permits,
-  totalPeriods: stats.total_periods,
+  historicPermitCount: stats.historic_permits,
 });
+
 
 
   const active = execAll(`
