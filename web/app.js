@@ -267,27 +267,15 @@ function renderPermitCardUnified({
 }
 
 // --- UNIFIED owner card renderer (samme visuelle stil som permit-kort) ---
-function renderOwnerCardUnified({ ownerName, ownerIdentity, activeCount, formerPermitCount }) {
-  const card = safeEl("ownerCard");
-  card.classList.remove("hidden");
+function renderOwnerCardUnified({ ownerName, ownerIdentity, activeCount, grunnrenteActiveCount, formerPermitCount }) {
+renderOwnerCardUnified({
+  ownerName: stats.owner_name || "(ukjent)",
+  ownerIdentity: ownerIdentity,
+  activeCount: stats.active_permits,
+  grunnrenteActiveCount,
+  formerPermitCount: stats.former_permits,
+});
 
-  const name = valueOrDash(ownerName);
-  const ident = String(ownerIdentity ?? "").trim();
-
-  card.innerHTML = `
-    <div style="font-size:1.1rem;font-weight:700">
-      ${escapeHtml(name)}
-    </div>
-
-    <div style="margin-top:10px">
-      <div><span class="muted">Org.nr.:</span> ${escapeHtml(ident || "—")}</div>
-
-      <div style="margin-top:10px">
-        <div><span class="muted">Aktive tillatelser:</span> ${escapeHtml(String(activeCount ?? 0))}</div>
-        <div><span class="muted">Tidligere tillatelser:</span> ${escapeHtml(String(formerPermitCount ?? 0))}</div>
-      </div>
-    </div>
-  `;
 }
 
 
@@ -805,11 +793,16 @@ function renderOwner(ownerIdentity) {
   SELECT
     permit_key AS permit_key,
     ${schema.permit_current_has_art ? "art AS art" : "NULL AS art"},
-    row_json AS row_json
+    row_json AS row_json,
+    grunnrente_pliktig AS grunnrente_pliktig
   FROM permit_current
   WHERE REPLACE(TRIM(owner_identity), ' ', '') = ?
   ORDER BY permit_key;
 `, [ownerIdentity]);
+
+const grunnrenteActiveCount = active.reduce((acc, r) => {
+  return acc + (Number(r.grunnrente_pliktig) === 1 ? 1 : 0);
+}, 0);
 
 
   const activeBody = safeEl("ownerActiveTable").querySelector("tbody");
