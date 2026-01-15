@@ -722,17 +722,20 @@ function renderOwner(ownerIdentity) {
 
   ownerIdentity = identTrim.replace(/\s+/g, "");
   inputEl.value = ownerIdentity;
+  const ownerIdentityNorm = ownerIdentity; // 9 siffer uten mellomrom
+
 
   const stats = one(`
-    SELECT
-      owner_identity AS owner_identity,
-      MAX(owner_name) AS owner_name,
-      SUM(CASE WHEN valid_to IS NULL OR valid_to = '' THEN 1 ELSE 0 END) AS active_permits,
-      COUNT(*) AS total_periods
-    FROM ownership_history
-    WHERE owner_identity = ?
-    GROUP BY owner_identity;
-  `, [ownerIdentity]);
+  SELECT
+    REPLACE(TRIM(owner_identity), ' ', '') AS owner_identity,
+    MAX(owner_name) AS owner_name,
+    SUM(CASE WHEN valid_to IS NULL OR valid_to = '' THEN 1 ELSE 0 END) AS active_permits,
+    COUNT(*) AS total_periods
+  FROM ownership_history
+  WHERE REPLACE(TRIM(owner_identity), ' ', '') = ?
+  GROUP BY REPLACE(TRIM(owner_identity), ' ', '');
+`, [ownerIdentity]);
+
 
   if (!stats) {
     safeEl("ownerEmpty").textContent = `Fant ikke org.nr.: ${ownerIdentity}`;
@@ -748,14 +751,15 @@ function renderOwner(ownerIdentity) {
 
 
   const active = execAll(`
-    SELECT
-      permit_key AS permit_key,
-      ${schema.permit_current_has_art ? "art AS art" : "NULL AS art"},
-      row_json AS row_json
-    FROM permit_current
-    WHERE owner_identity = ?
-    ORDER BY permit_key;
-  `, [ownerIdentity]);
+  SELECT
+    permit_key AS permit_key,
+    ${schema.permit_current_has_art ? "art AS art" : "NULL AS art"},
+    row_json AS row_json
+  FROM permit_current
+  WHERE REPLACE(TRIM(owner_identity), ' ', '') = ?
+  ORDER BY permit_key;
+`, [ownerIdentity]);
+
 
   const activeBody = safeEl("ownerActiveTable").querySelector("tbody");
   activeBody.innerHTML = "";
@@ -788,18 +792,19 @@ function renderOwner(ownerIdentity) {
   }
 
   const hist = execAll(`
-    SELECT
-      permit_key AS permit_key,
-      valid_from AS valid_from,
-      valid_to   AS valid_to,
-      COALESCE(NULLIF(valid_to,''), 'Aktiv') AS valid_to_label,
-      owner_name AS owner_name,
-      owner_orgnr AS owner_orgnr,
-      tidsbegrenset AS tidsbegrenset
-    FROM ownership_history
-    WHERE owner_identity = ?
-    ORDER BY permit_key, date(valid_from), id;
-  `, [ownerIdentity]);
+  SELECT
+    permit_key AS permit_key,
+    valid_from AS valid_from,
+    valid_to   AS valid_to,
+    COALESCE(NULLIF(valid_to,''), 'Aktiv') AS valid_to_label,
+    owner_name AS owner_name,
+    owner_orgnr AS owner_orgnr,
+    tidsbegrenset AS tidsbegrenset
+  FROM ownership_history
+  WHERE REPLACE(TRIM(owner_identity), ' ', '') = ?
+  ORDER BY permit_key, date(valid_from), id;
+`, [ownerIdentity]);
+
 
   const histBody = safeEl("ownerHistoryTable").querySelector("tbody");
   histBody.innerHTML = "";
