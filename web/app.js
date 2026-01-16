@@ -155,6 +155,19 @@ function formatKapNoTrailing00(kapRaw) {
   return s.replace(".", ",");
 }
 
+function extractCapacityTN(rowJsonText) {
+  const d = parseJsonSafe(rowJsonText);
+
+  const kapRaw = String(d["TILL_KAP"] ?? "").trim();
+  const enh = String(d["TILL_ENHET"] ?? "").trim().toUpperCase();
+
+  if (!kapRaw || enh !== "TN") return 0;
+
+  // normaliser tall (komma → punkt)
+  const num = Number(kapRaw.replace(",", "."));
+  return Number.isFinite(num) ? num : 0;
+}
+
 // -------------------------------
 // NYTT: pill-regler (aktive)
 // -------------------------------
@@ -458,7 +471,9 @@ function renderOwnerCardUnified({
   ownerIdentity,
   activeCount,
   grunnrenteActiveCount,
-  formerPermitCount
+  formerPermitCount,
+  activeCapacityTN = 0,
+  grunnrenteCapacityTN = 0,
 }) {
   const card = safeEl("ownerCard");
   card.classList.remove("hidden");
@@ -466,6 +481,12 @@ function renderOwnerCardUnified({
   const name = valueOrDash(ownerName);
   const ident = String(ownerIdentity ?? "").trim();
 
+  function fmtTN(n) {
+    if (!n || n <= 0) return "";
+    // rund av til heltall – endre hvis du vil ha desimaler
+    return ` (${Math.round(n).toLocaleString("nb-NO")} TN)`;
+  }
+  
   const grunnCount = Number(grunnrenteActiveCount ?? 0);
   const grunnPillHtml = grunnCount > 0
     ? `<span class="pill pill--blue">Grunnrentepliktig</span>`
@@ -956,18 +977,35 @@ function renderOwner(ownerIdentity) {
     ORDER BY permit_key;
   `, [ownerIdentityNorm]);
 
+  // --- Kapasitetssummer (kun TN) ---
+const activeCapacityTN = active.reduce(
+  (sum, r) => sum + extractCapacityTN(r.row_json),
+  0
+);
+
+const grunnrenteCapacityTN = active.reduce(
+  (sum, r) =>
+    Number(r.grunnrente_pliktig) === 1
+      ? sum + extractCapacityTN(r.row_json)
+      : sum,
+  0
+);
+
   const grunnrenteActiveCount = active.reduce((acc, r) => acc + (Number(r.grunnrente_pliktig) === 1 ? 1 : 0), 0);
 
   setOwnerEmptyStateVisible(false);
   setOwnerResultsVisible(true);
 
   renderOwnerCardUnified({
-    ownerName: stats.owner_name || "(ukjent)",
-    ownerIdentity: ownerIdentityNorm,
-    activeCount: Number(stats.active_permits ?? 0),
-    grunnrenteActiveCount,
-    formerPermitCount: Number(stats.former_permits ?? 0),
-  });
+  ownerName: stats.owner_name || "(ukjent)",
+  ownerIdentity: ownerIdentityNorm,
+  activeCount: Number(stats.active_permits ?? 0),
+  grunnrenteActiveCount,
+  formerPermitCount: Number(stats.former_permits ?? 0),
+  activeCapacityTN,
+  grunnrenteCapacityTN,
+});
+
 
   // --- FILTER: grunnrente + formål (kun for aktiv-tabellen) ---
   const onlyGrunnrente = $("ownerOnlyGrunnrente")?.checked === true;
