@@ -616,6 +616,11 @@ function renderNow() {
         String(r.owner_orgnr ?? "").toLowerCase().includes(q)
       )
     : rows;
+  
+    const empty = $("historyEmpty");
+      if (empty) {
+        empty.classList.toggle("hidden", filtered.length !== 0);
+      }
 
   const { key, dir } = sortState.now;
   filtered.sort((a, b) => {
@@ -1161,32 +1166,48 @@ function renderHistory() {
   // Hent siste avsluttede periode per permit_key
   // og filtrer bort de som fortsatt finnes i permit_current (for å være helt sikker på "historisk")
   const rows = execAll(`
-    WITH ended AS (
-      SELECT
-        permit_key,
-        owner_name,
-        owner_identity,
-        valid_to,
-        ROW_NUMBER() OVER (
-          PARTITION BY permit_key
-          ORDER BY date(valid_to) DESC
-        ) AS rn
-      FROM ownership_history
-      WHERE valid_to IS NOT NULL
-        AND TRIM(valid_to) <> ''
-    )
+  WITH ended AS (
     SELECT
-      e.permit_key AS permit_key,
-      e.owner_name AS owner_name,
-      e.owner_identity AS owner_identity,
-      e.valid_to AS valid_to
+      permit_key,
+      owner_name,
+      owner_identity,
+      valid_to
+    FROM ownership_history
+    WHERE valid_to IS NOT NULL
+      AND TRIM(valid_to) <> ''
+  ),
+  last_end AS (
+    SELECT
+      permit_key,
+      MAX(valid_to) AS last_valid_to
+    FROM ended
+    GROUP BY permit_key
+  ),
+  last_row AS (
+    SELECT
+      e.permit_key,
+      e.owner_name,
+      e.owner_identity,
+      e.valid_to
     FROM ended e
-    LEFT JOIN permit_current pc
-      ON UPPER(REPLACE(TRIM(pc.permit_key), ' ', '')) = UPPER(REPLACE(TRIM(e.permit_key), ' ', ''))
-    WHERE e.rn = 1
-      AND pc.permit_key IS NULL
-    ORDER BY date(e.valid_to) DESC;
-  `);
+    JOIN last_end le
+      ON le.permit_key = e.permit_key
+     AND le.last_valid_to = e.valid_to
+  )
+  SELECT
+    lr.permit_key AS permit_key,
+    lr.owner_name AS owner_name,
+    lr.owner_identity AS owner_identity,
+    lr.valid_to AS valid_to
+  FROM last_row lr
+  LEFT JOIN permit_current pc
+    ON UPPER(REPLACE(TRIM(pc.permit_key), ' ', '')) = UPPER(REPLACE(TRIM(lr.permit_key), ' ', ''))
+  WHERE pc.permit_key IS NULL
+  ORDER BY lr.valid_to DESC, lr.permit_key;
+`);
+
+
+  console.log("Historikk rows:", rows.length, rows.slice(0, 3));
 
   const filtered = q
     ? rows.filter(r =>
