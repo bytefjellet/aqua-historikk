@@ -145,18 +145,64 @@ function toHashOwner(identity) {
 function formatKapNoTrailing00(kapRaw) {
   const t = String(kapRaw ?? "").trim();
   if (!t) return "";
-  // Normaliser til punkt for parse
   const normalized = t.replace(",", ".");
   const num = Number(normalized);
   if (!Number.isFinite(num)) return t;
 
-  // Hvis heltall eller .00 -> uten desimal
   if (Math.abs(num - Math.round(num)) < 1e-9) return String(Math.round(num));
 
-  // Ellers: behold desimal, men med komma
-  // Unngå for lang representasjon
   const s = String(num);
   return s.replace(".", ",");
+}
+
+// -------------------------------
+// NYTT: pill-regler (aktive)
+// -------------------------------
+function normUpper(s) {
+  return (s ?? "").toString().trim().toUpperCase();
+}
+
+function toArray(val) {
+  if (val == null) return [];
+  if (Array.isArray(val)) return val;
+  return val
+    .toString()
+    .split(/[;,/]/)
+    .map(x => x.trim())
+    .filter(Boolean);
+}
+
+// Art: blå hvis Laks/Regnbuørret/Ørret inngår
+const BLUE_ART = new Set(["LAKS", "REGNBUØRRET", "ØRRET"]);
+function isBlueArt(artValue) {
+  const arts = toArray(artValue).map(normUpper);
+  return arts.some(a => BLUE_ART.has(a));
+}
+
+// Formål: blå hvis KOMMERSIELL
+function isBlueFormal(formalValue) {
+  return normUpper(formalValue) === "KOMMERSIELL";
+}
+
+// Produksjonsstadium: blå hvis i whitelist
+const BLUE_STAGE = new Set([
+  "MATFISK",
+  "MATFISK - (5% MTB ØKNING)",
+  "MATFISK -GRMNN A",
+  "MATFISK -GRØNN A(5% MTB ØKNING)",
+  "MATFISK -GRØNN B",
+  "MATFISK -GRØNN C",
+  "MATFISK -GRØNN KONVERTERT",
+  "ØKOLOGISK MATFISK",
+].map(normUpper));
+
+function isBlueProduksjonsstadium(stageValue) {
+  return BLUE_STAGE.has(normUpper(stageValue));
+}
+
+function pillSpanByRule(text, isBlue) {
+  if (!String(text ?? "").trim()) return "";
+  return `<span class="pill ${isBlue ? "pill--blue" : "pill--yellow"}">${escapeHtml(String(text).trim())}</span>`;
 }
 
 // --- PERMIT empty state helpers ---
@@ -228,7 +274,6 @@ function clearPermitView() {
 }
 
 function clearOwnerView() {
-  // Skjul resultater, vis tom-tilstand
   setOwnerResultsVisible(false);
   setOwnerEmptyStateVisible(true);
 
@@ -262,7 +307,6 @@ function renderOwnerFormalButtons(countsByFormal /* Map */) {
   if (!root) return;
 
   root.innerHTML = "";
-
   if (!allFormals.length) return;
 
   for (const formal of allFormals) {
@@ -270,7 +314,6 @@ function renderOwnerFormalButtons(countsByFormal /* Map */) {
 
     const btn = document.createElement("button");
     btn.type = "button";
-    // Viktig: disse klassene må matche CSS-en din (.filter-btn, .zero, .active)
     btn.className = "filter-btn";
     if (count === 0) btn.classList.add("zero");
     if (ownerFilters.formal === formal) btn.classList.add("active");
@@ -307,7 +350,8 @@ function renderPermitCardUnified({
   const card = safeEl("permitCard");
   card.classList.remove("hidden");
 
-  const statusPillClass = isActive ? "pill--green" : "pill--yellow";
+  // NYTT: Historisk-pill skal være rød (ikke gul)
+  const statusPillClass = isActive ? "pill--green" : "pill--red";
   const statusPillText  = isActive ? "Aktiv tillatelse" : "Historisk";
 
   const vm = String(vannmiljo ?? "").trim();
@@ -320,7 +364,6 @@ function renderPermitCardUnified({
   const lpPill = lp
     ? `<span class="pill ${lp.toUpperCase() === "SJØ" ? "pill--blue" : "pill--yellow"}">${escapeHtml(lp)}</span>`
     : "";
-
 
   let grunnPillClass = "pill--yellow";
   let grunnPillText = "Grunnrente: ukjent";
@@ -335,6 +378,11 @@ function renderPermitCardUnified({
 
   const identRaw = String(ownerIdentity ?? "").trim();
   const ident = identRaw.replace(/\s+/g, "");
+
+  // NYTT: Art/Formål/Produksjonsstadium pill-regler (kun for aktive)
+  const artPill = isActive ? pillSpanByRule(artText, isBlueArt(artText)) : "";
+  const formalPill = isActive ? pillSpanByRule(formal, isBlueFormal(formal)) : "";
+  const prodStagePill = isActive ? pillSpanByRule(produksjonsstadium, isBlueProduksjonsstadium(produksjonsstadium)) : "";
 
   card.innerHTML = `
     <div>
@@ -358,26 +406,34 @@ function renderPermitCardUnified({
       
       ${tidsbegrenset ? `<div style="margin-top:8px"><span class="muted">Tidsbegrenset:</span> ${escapeHtml(tidsbegrenset)}</div>` : ""}
 
-      ${artText ? `<div style="margin-top:8px"><span class="muted">Arter:</span> ${escapeHtml(artText)}</div>` : ""}
-
-      <div style="margin-top:10px">
-      <div><span class="muted">Formål:</span> ${escapeHtml(valueOrDash(formal))}</div>
-      <div><span class="muted">Produksjonsstadium:</span> ${escapeHtml(valueOrDash(produksjonsstadium))}</div>
-      <div><span class="muted">Tillatelseskapasitet:</span> ${escapeHtml(valueOrDash(kapasitet))}</div>
-      <div><span class="muted">Produksjonsområde:</span> ${escapeHtml((String(prodOmr ?? "").trim() || "N/A"))}</div>
-
-      ${(vmPill || lpPill) ? `
+      ${artText ? `
         <div style="margin-top:8px">
-          ${vmPill ? `<div><span class="muted">Vannmiljø:</span> ${vmPill}</div>` : ""}
-          ${lpPill ? `<div style="margin-top:6px"><span class="muted">Plassering:</span> ${lpPill}</div>` : ""}
+          <span class="muted">Arter:</span> ${isActive ? (artPill || escapeHtml(valueOrDash(artText))) : escapeHtml(valueOrDash(artText))}
         </div>
       ` : ""}
 
+      <div style="margin-top:10px">
+        <div>
+          <span class="muted">Formål:</span>
+          ${isActive ? (formalPill || escapeHtml(valueOrDash(formal))) : escapeHtml(valueOrDash(formal))}
+        </div>
+        <div style="margin-top:6px">
+          <span class="muted">Produksjonsstadium:</span>
+          ${isActive ? (prodStagePill || escapeHtml(valueOrDash(produksjonsstadium))) : escapeHtml(valueOrDash(produksjonsstadium))}
+        </div>
+        <div style="margin-top:6px"><span class="muted">Tillatelseskapasitet:</span> ${escapeHtml(valueOrDash(kapasitet))}</div>
+        <div style="margin-top:6px"><span class="muted">Produksjonsområde:</span> ${escapeHtml((String(prodOmr ?? "").trim() || "N/A"))}</div>
+
+        ${(vmPill || lpPill) ? `
+          <div style="margin-top:8px">
+            ${vmPill ? `<div><span class="muted">Vannmiljø:</span> ${vmPill}</div>` : ""}
+            ${lpPill ? `<div style="margin-top:6px"><span class="muted">Plassering:</span> ${lpPill}</div>` : ""}
+          </div>
+        ` : ""}
       </div>
     </div>
   `;
-    
-    }
+}
 
 // --- UNIFIED owner card renderer (med blå/gul grunnrente-pill) ---
 function renderOwnerCardUnified({
@@ -678,7 +734,6 @@ function renderPermit(permitKey) {
     const vannmiljo = String(rowDict["VANNMILJØ"] ?? rowDict["VANNMILJO"] ?? rowDict["VANNMILJ"] ?? "").trim();
     const lokPlass  = String(rowDict["LOK_PLASS"] ?? rowDict["LOKPLASS"] ?? rowDict["PLASSERING"] ?? "").trim();
 
-
     renderPermitCardUnified({
       permitKey: String(now.permit_key ?? permitKey),
       permitUrl,
@@ -730,7 +785,6 @@ function renderPermit(permitKey) {
     const prodOmr = String(snapDict["PROD_OMR"] ?? "").trim() || "N/A";
     const vannmiljo = String(snapDict["VANNMILJØ"] ?? snapDict["VANNMILJO"] ?? snapDict["VANNMILJ"] ?? "").trim();
     const lokPlass  = String(snapDict["LOK_PLASS"] ?? snapDict["LOKPLASS"] ?? snapDict["PLASSERING"] ?? "").trim();
-
 
     let grunnrenteValue = false;
     if (snapRow && snapRow.grunnrente_pliktig != null && snapRow.grunnrente_pliktig !== "") {
@@ -800,7 +854,6 @@ function renderOwner(ownerIdentity) {
   setActiveTab("tab-owner");
   showView("view-owner");
 
-  // Default tom-tilstand (lik permit)
   setOwnerEmptyStateContent({
     icon: "🔍",
     title: "Søk etter innehaver",
@@ -814,14 +867,12 @@ function renderOwner(ownerIdentity) {
   const inputEl = safeEl("ownerInput");
   const identTrim = String(ownerIdentity || "").trim();
 
-  // Ingen input -> bare tom-tilstand
   if (!identTrim) {
     setOwnerEmptyStateVisible(true);
     setOwnerResultsVisible(false);
     return;
   }
 
-  // Ugyldig input -> permit-lik feilmelding
   if (!/^[0-9]{9}$/.test(identTrim)) {
     setOwnerEmptyStateContent({
       icon: "⚠️",
@@ -836,7 +887,6 @@ function renderOwner(ownerIdentity) {
   const ownerIdentityNorm = identTrim.replace(/\s+/g, "");
   inputEl.value = ownerIdentityNorm;
 
-  // Stats: aktive + tidligere (unike ikke-lenger-aktive)
   const stats = one(`
     WITH owner_rows AS (
       SELECT
@@ -878,7 +928,6 @@ function renderOwner(ownerIdentity) {
     return;
   }
 
-  // Active permits (for table + grunnrenteActiveCount)
   const active = execAll(`
     SELECT
       permit_key AS permit_key,
@@ -892,11 +941,9 @@ function renderOwner(ownerIdentity) {
 
   const grunnrenteActiveCount = active.reduce((acc, r) => acc + (Number(r.grunnrente_pliktig) === 1 ? 1 : 0), 0);
 
-  // Treffer: skjul tom-tilstand, vis resultater
   setOwnerEmptyStateVisible(false);
   setOwnerResultsVisible(true);
 
-  // Render owner card
   renderOwnerCardUnified({
     ownerName: stats.owner_name || "(ukjent)",
     ownerIdentity: ownerIdentityNorm,
@@ -927,7 +974,6 @@ function renderOwner(ownerIdentity) {
     ? activeAfterGrunnrente.filter(r => extractFormalFromRowJson(r.row_json) === selectedFormal)
     : activeAfterGrunnrente;
 
-  // tom-melding ved 0 treff i aktiv-tabellen
   if (activeDisplay.length === 0) {
     setOwnerActiveEmptyMessage("Ingen tillatelser funnet");
   } else {
@@ -940,18 +986,6 @@ function renderOwner(ownerIdentity) {
 
   for (const r of activeDisplay) {
     const rowDict = parseJsonSafe(r.row_json);
-    const vannmiljo = String(
-      rowDict["VANNMILJØ"] ??
-      rowDict["VANNMILJO"] ??
-      ""
-    ).trim();
-
-const lokPlass = String(
-  rowDict["LOK_PLASS"] ??
-  ""
-).trim();
-
-
     const prodOmr = String(rowDict["PROD_OMR"] ?? "").trim();
 
     const artRaw = (r.art && String(r.art).trim())
@@ -986,7 +1020,7 @@ const lokPlass = String(
     activeBody.appendChild(tr);
   }
 
-  // Historikk: kun avsluttede perioder (Gyldig til = dato)
+  // Historikk: kun avsluttede perioder
   const hist = execAll(`
     SELECT
       permit_key AS permit_key,
@@ -1028,7 +1062,7 @@ const lokPlass = String(
     if (!reason) reason = "--";
 
     const vf = displayDate(r.valid_from);
-    const vtLabel = displayDate(r.valid_to_label); // alltid dato her
+    const vtLabel = displayDate(r.valid_to_label);
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -1156,7 +1190,7 @@ function wireEvents() {
       return;
     }
 
-    ownerFilters.formal = null; // reset formål-filter ved nytt søk
+    ownerFilters.formal = null;
     toHashOwner(ident.replace(/\s+/g, ""));
   });
 

@@ -307,6 +307,11 @@ h3 { margin: 0 0 8px; }
   color: #b45309;
 }
 
+.pill--red {
+  background: #fee2e2; /* rød soft */
+  color: #b91c1c;      /* rød tekst */
+}
+
 /* =========================
    Empty state (Permit + Owner likt)
    ========================= */
