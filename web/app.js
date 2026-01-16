@@ -484,9 +484,11 @@ function renderOwnerCardUnified({
 
   // Formatter TN-sum (midlertidig: vis også 0 for debugging)
   function fmtTN(n) {
-    const v = Number(n || 0);
-    return ` (${Math.round(v).toLocaleString("nb-NO")} TN)`;
-  }
+  const v = Number(n || 0);
+  if (v <= 0) return "";
+  return ` (samlet kapasitet: ${Math.round(v).toLocaleString("nb-NO")} TN)`;
+}
+
 
   console.log("activeCapacityTN:", activeCapacityTN, "grunnrenteCapacityTN:", grunnrenteCapacityTN);
 
