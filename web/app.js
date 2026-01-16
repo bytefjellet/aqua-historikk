@@ -300,6 +300,8 @@ function renderPermitCardUnified({
   produksjonsstadium,
   kapasitet,
   prodOmr,
+  vannmiljo,
+  lokPlass,
   tidsbegrenset,
 }) {
   const card = safeEl("permitCard");
