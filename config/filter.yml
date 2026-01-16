@@ -33,10 +33,10 @@ filters:
       include_any:
         - "MATFISK"
         - "MATFISK - (5% MTB ØKNING)"
-        - "MATFISK -GRMNN A"
-        - "MATFISK -GRØNN A(5% MTB ØKNING)"
-        - "MATFISK -GRØNN B"
-        - "MATFISK -GRØNN C"
-        - "MATFISK -GRØNN KONVERTERT"
+        - "MATFISK - GRØNN A"
+        - "MATFISK - GRØNN A(5% MTB ØKNING)"
+        - "MATFISK - GRØNN B"
+        - "MATFISK - GRØNN C"
+        - "MATFISK - GRØNN KONVERTERT"
         - "ØKOLOGISK MATFISK"
       
