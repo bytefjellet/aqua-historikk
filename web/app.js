@@ -1,9 +1,5 @@
 /* global initSqlJs */
 
-// =========================
-// app.js (FULL REPLACEMENT)
-// =========================
-
 let SQL = null;
 let db = null;
 
@@ -104,6 +100,11 @@ function iso10(s) {
 function displayDate(s) {
   if (s == null) return "";
   return iso10(s) || String(s);
+}
+
+function pillHtml(text, kind) {
+  const cls = kind === "blue" ? "pill--blue" : "pill--yellow";
+  return `<span class="pill ${cls}">${escapeHtml(text)}</span>`;
 }
 
 function formatNorwegianDate(isoDate) {
@@ -299,6 +300,8 @@ function renderPermitCardUnified({
   produksjonsstadium,
   kapasitet,
   prodOmr,
+  vannmiljo,
+  lokPlass,
   tidsbegrenset,
 }) {
   const card = safeEl("permitCard");
@@ -306,6 +309,18 @@ function renderPermitCardUnified({
 
   const statusPillClass = isActive ? "pill--green" : "pill--yellow";
   const statusPillText  = isActive ? "Aktiv tillatelse" : "Historisk";
+
+  const vm = String(vannmiljo ?? "").trim();
+  const lp = String(lokPlass ?? "").trim();
+
+  const vmPill = vm
+    ? `<span class="pill ${vm.toUpperCase() === "SALT" ? "pill--blue" : "pill--yellow"}">${escapeHtml(vm)}</span>`
+    : "";
+
+  const lpPill = lp
+    ? `<span class="pill ${lp.toUpperCase() === "SJØ" ? "pill--blue" : "pill--yellow"}">${escapeHtml(lp)}</span>`
+    : "";
+
 
   let grunnPillClass = "pill--yellow";
   let grunnPillText = "Grunnrente: ukjent";
@@ -340,6 +355,13 @@ function renderPermitCardUnified({
       <div><span class="muted">Org.nr.:</span>
         ${ident ? `<a class="link" href="#/owner/${encodeURIComponent(ident)}">${escapeHtml(ident)}</a>` : "—"}
       </div>
+      
+      ${(vmPill || lpPill) ? `
+        <div style="margin-top:10px">
+          ${vmPill ? `<div><span class="muted">Vannmiljø:</span> ${vmPill}</div>` : ""}
+          ${lpPill ? `<div style="margin-top:6px"><span class="muted">Plassering:</span> ${lpPill}</div>` : ""}
+        </div>
+      ` : ""}
 
       ${tidsbegrenset ? `<div style="margin-top:8px"><span class="muted">Tidsbegrenset:</span> ${escapeHtml(tidsbegrenset)}</div>` : ""}
 
