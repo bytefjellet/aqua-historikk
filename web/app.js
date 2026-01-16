@@ -52,12 +52,13 @@ function setMeta(text) {
 }
 
 function setActiveTab(tabId) {
-  for (const id of ["tab-now", "tab-permit", "tab-owner"]) {
+  for (const id of ["tab-now", "tab-permit", "tab-owner", "tab-history"]) {
     const el = $(id);
     if (!el) continue;
     el.classList.toggle("active", id === tabId);
   }
 }
+
 
 function showView(viewId) {
   for (const id of ["view-now", "view-permit", "view-owner", "view-history"]) {
@@ -1147,6 +1148,69 @@ const grunnrenteCapacityTN = active.reduce(
       <td>${escapeHtml(r.owner_orgnr || "")}</td>
     `;
     histBody.appendChild(tr);
+  }
+}
+
+// --- HISTORY view ---
+function renderHistory() {
+  setActiveTab("tab-history");
+  showView("view-history");
+
+  const q = $("historySearch")?.value.trim().toLowerCase() || "";
+
+  // Hent siste avsluttede periode per permit_key
+  // og filtrer bort de som fortsatt finnes i permit_current (for å være helt sikker på "historisk")
+  const rows = execAll(`
+    WITH ended AS (
+      SELECT
+        permit_key,
+        owner_name,
+        owner_identity,
+        valid_to,
+        ROW_NUMBER() OVER (
+          PARTITION BY permit_key
+          ORDER BY date(valid_to) DESC
+        ) AS rn
+      FROM ownership_history
+      WHERE valid_to IS NOT NULL
+        AND TRIM(valid_to) <> ''
+    )
+    SELECT
+      e.permit_key AS permit_key,
+      e.owner_name AS owner_name,
+      e.owner_identity AS owner_identity,
+      e.valid_to AS valid_to
+    FROM ended e
+    LEFT JOIN permit_current pc
+      ON UPPER(REPLACE(TRIM(pc.permit_key), ' ', '')) = UPPER(REPLACE(TRIM(e.permit_key), ' ', ''))
+    WHERE e.rn = 1
+      AND pc.permit_key IS NULL
+    ORDER BY date(e.valid_to) DESC;
+  `);
+
+  const filtered = q
+    ? rows.filter(r =>
+        String(r.permit_key ?? "").toLowerCase().includes(q) ||
+        String(r.owner_name ?? "").toLowerCase().includes(q) ||
+        String(r.owner_identity ?? "").toLowerCase().includes(q)
+      )
+    : rows;
+
+  const tbody = safeEl("historyTable").querySelector("tbody");
+  tbody.innerHTML = "";
+
+  for (const r of filtered) {
+    const ident = String(r.owner_identity ?? "").trim();
+    const permitKeyNorm = normalizePermitKey(r.permit_key);
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><a class="link" href="#/permit/${encodeURIComponent(permitKeyNorm)}">${escapeHtml(r.permit_key)}</a></td>
+      <td>${escapeHtml(r.owner_name || "—")}</td>
+      <td>${ident ? `<a class="link" href="#/owner/${encodeURIComponent(ident)}">${escapeHtml(ident)}</a>` : "—"}</td>
+      <td>${escapeHtml(displayDate(r.valid_to))}</td>
+    `;
+    tbody.appendChild(tr);
   }
 }
 
