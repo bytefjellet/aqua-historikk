@@ -391,9 +391,13 @@ function renderPermitCardUnified({
   const ident = identRaw.replace(/\s+/g, "");
 
   // NYTT: Art/Formål/Produksjonsstadium pill-regler (kun for aktive)
-  const artPill = isActive ? pillSpanByRule(artText, isBlueArt(artText)) : "";
-  const formalPill = isActive ? pillSpanByRule(formal, isBlueFormal(formal)) : "";
-  const prodStagePill = isActive ? pillSpanByRule(produksjonsstadium, isBlueProduksjonsstadium(produksjonsstadium)) : "";
+  const artPill = pillSpanByRule(artText, isBlueArt(artText));
+  const formalPill = pillSpanByRule(formal, isBlueFormal(formal));
+  const prodStagePill = pillSpanByRule(
+    produksjonsstadium,
+    isBlueProduksjonsstadium(produksjonsstadium)
+  );
+
 
   card.innerHTML = `
     <div>
@@ -418,20 +422,22 @@ function renderPermitCardUnified({
       ${tidsbegrenset ? `<div style="margin-top:8px"><span class="muted">Tidsbegrenset:</span> ${escapeHtml(tidsbegrenset)}</div>` : ""}
 
       ${artText ? `
-        <div style="margin-top:8px">
-          <span class="muted">Arter:</span> ${isActive ? (artPill || escapeHtml(valueOrDash(artText))) : escapeHtml(valueOrDash(artText))}
-        </div>
-      ` : ""}
+      <div style="margin-top:8px">
+        <span class="muted">Arter:</span> ${artPill || escapeHtml(valueOrDash(artText))}
+      </div>
+    ` : ""}
 
       <div style="margin-top:10px">
         <div>
           <span class="muted">Formål:</span>
-          ${isActive ? (formalPill || escapeHtml(valueOrDash(formal))) : escapeHtml(valueOrDash(formal))}
+          ${formalPill || escapeHtml(valueOrDash(formal))}
         </div>
+
         <div style="margin-top:6px">
           <span class="muted">Produksjonsstadium:</span>
-          ${isActive ? (prodStagePill || escapeHtml(valueOrDash(produksjonsstadium))) : escapeHtml(valueOrDash(produksjonsstadium))}
+          ${prodStagePill || escapeHtml(valueOrDash(produksjonsstadium))}
         </div>
+
         <div style="margin-top:6px"><span class="muted">Tillatelseskapasitet:</span> ${escapeHtml(valueOrDash(kapasitet))}</div>
         <div style="margin-top:6px"><span class="muted">Produksjonsområde:</span> ${escapeHtml((String(prodOmr ?? "").trim() || "N/A"))}</div>
 
