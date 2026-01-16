@@ -43,6 +43,59 @@ def init_db(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    # ----------------------------
+    # Opprinnelig innehaver
+    # ----------------------------
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS license_original_owner (
+            permit_key TEXT PRIMARY KEY,
+            original_owner_orgnr TEXT,
+            original_owner_name TEXT,
+            raw_json TEXT NOT NULL,
+            fetched_at TEXT NOT NULL
+        );
+        """
+    )
+    # ----------------------------
+    # production_area (dimensjon)
+    # ----------------------------
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS production_area (
+        prod_area_code INTEGER PRIMARY KEY,   -- 1..13
+        prod_area_name TEXT
+    );
+    """)
+
+    # ----------------------------
+    # production_area_sample
+    # ----------------------------
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS production_area_sample (
+        prod_area_code INTEGER PRIMARY KEY,
+        permit_key TEXT NOT NULL
+    );
+    """)
+
+    # ----------------------------
+    # production_area_status (historikk)
+    # ----------------------------
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS production_area_status (
+        snapshot_date TEXT NOT NULL,          -- YYYY-MM-DD
+        prod_area_code INTEGER NOT NULL,
+        prod_area_status TEXT,
+        raw_json TEXT NOT NULL,
+        row_hash TEXT NOT NULL,
+        PRIMARY KEY (snapshot_date, prod_area_code)
+    );
+    """)
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_pa_status_code_date ON production_area_status(prod_area_code, snapshot_date);"
+    )
+
 
     # ----------------------------
     # permit_current (NOW-state)
@@ -66,6 +119,8 @@ def init_db(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "permit_current", "owner_identity", "TEXT")
     _add_column_if_missing(conn, "permit_current", "grunnrente_pliktig", "INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing(conn, "permit_current", "art", "TEXT")
+    _add_column_if_missing(conn, "permit_current", "prod_omr", "INTEGER")
+
 
     # Backfill (sikkerhet)
     conn.execute(
@@ -98,6 +153,8 @@ def init_db(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "permit_snapshot", "row_hash", "TEXT")
     _add_column_if_missing(conn, "permit_snapshot", "art", "TEXT")
     _add_column_if_missing(conn, "permit_snapshot", "grunnrente_pliktig", "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "permit_snapshot", "prod_omr", "INTEGER")
+
 
 
     # Backfill (sikkerhet)

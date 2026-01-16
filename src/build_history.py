@@ -272,8 +272,15 @@ def print_preflight_report(result: PreflightResult) -> None:
 # Hovedlogikk: bygg DB fra snapshots
 # ----------------------------
 
-TodayTuple = Tuple[str, str, str, str, Optional[str], str]
-# (owner_orgnr, owner_name, owner_identity, row_json, tidsbegrenset, art)
+TodayTuple = Tuple[str, str, str, str, Optional[str], str, Optional[int]]
+# (owner_orgnr, owner_name, owner_identity, row_json, tidsbegrenset, art, prod_omr)
+
+def parse_int(s: str) -> Optional[int]:
+    s = as_text(s)
+    if not s:
+        return None
+    s = s.replace(".0", "")
+    return int(s) if s.isdigit() else None
 
 
 def apply_snapshot(
@@ -301,6 +308,21 @@ def apply_snapshot(
 
     # 2) Bygg rader
     rows = df.to_dict(orient="records")
+
+    # --- NYTT: prod_omr per permit_key fra ALLE rader ---
+    prod_omr_per_permit: Dict[str, Optional[int]] = {}
+    for r in rows:
+        pk = normalize_permit_key(as_text(r.get(KEY_COL)))
+        if not pk:
+            continue
+        v = as_text(r.get("PROD_OMR")).replace(".0", "").strip()
+        if not v.isdigit():
+            continue
+        n = int(v)
+        if 1 <= n <= 13:
+            # behold første funn (de bør være like for alle rader)
+            prod_omr_per_permit.setdefault(pk, n)
+
     # Samle alle arter per permit_key (fra alle rader i CSV, ikke bare representativ rad)
     art_map: Dict[str, set] = {}
 
@@ -372,7 +394,9 @@ def apply_snapshot(
         art = ", ".join(sorted(art_map.get(permit_key, set())))
 
         best_key[permit_key] = k
-        today[permit_key] = (owner_org, owner_name, owner_identity, row_json, tidsbegrenset, art)
+        prod_omr = prod_omr_per_permit.get(permit_key)
+        today[permit_key] = (owner_org, owner_name, owner_identity, row_json, tidsbegrenset, art, prod_omr)
+
 
 
     today_keys = set(today.keys())
@@ -394,7 +418,8 @@ def apply_snapshot(
     snapshots_written = 0
     snapshots_skipped = 0
 
-    for permit_key, (_org, _name, _ident, row_json, _tb, _art) in today.items():
+    for permit_key, (_org, _name, _ident, row_json, _tb, _art, prod_omr) in today.items():
+
 
         row_hash = sha256_text(row_json)
         prev_hash = latest_snapshot_hash(conn, permit_key)
@@ -413,11 +438,11 @@ def apply_snapshot(
         conn.execute(
             """
             INSERT OR REPLACE INTO permit_snapshot(
-                snapshot_date, permit_key, row_json, row_hash, grunnrente_pliktig
+                snapshot_date, permit_key, row_json, row_hash, grunnrente_pliktig, prod_omr
             )
-            VALUES (?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?,?);
             """,
-            (snapshot_date, permit_key, row_json, row_hash, grunn),
+            (snapshot_date, permit_key, row_json, row_hash, grunn, prod_omr),
         )
         snapshots_written += 1
 
@@ -470,7 +495,7 @@ def apply_snapshot(
 
     # Nye tillatelser => åpne eierperiode
     for permit_key in sorted(new_keys):
-        owner_org, owner_name, owner_identity, _row_json, tb, _art = today[permit_key]
+        owner_org, owner_name, owner_identity, _row_json, tb, _art, prod_omr = today[permit_key]
         open_new_ownership(permit_key, owner_org, owner_name, owner_identity, tb)
 
     # Fjernede tillatelser => lukk åpen periode
@@ -481,7 +506,7 @@ def apply_snapshot(
     owner_changes = 0
     for permit_key in sorted(common_keys):
         _prev_owner_org, _prev_owner_name, prev_owner_identity = current[permit_key]
-        owner_org, owner_name, owner_identity, _row_json, tb, _art = today[permit_key]
+        owner_org, owner_name, owner_identity, _row_json, tb, _art, prod_omr = today[permit_key]
 
         if owner_identity != prev_owner_identity:
             owner_changes += 1
@@ -510,7 +535,7 @@ def apply_snapshot(
 
     # Generell pass (trygg) for alle tillatelser i dag
     for permit_key in sorted(today_keys):
-        _o, _n, _i, _j, tb, _art = today[permit_key]
+        _o, _n, _i, _j, tb, _art, _prod_omr = today[permit_key]
         update_open_tidsbegrenset(permit_key, tb)
 
     # 6) Oppdater permit_current
@@ -518,7 +543,7 @@ def apply_snapshot(
         conn.execute("DELETE FROM permit_current WHERE permit_key = ?;", (permit_key,))
 
     for permit_key in sorted(today_keys):
-        owner_org, owner_name, owner_identity, row_json, _tb, art = today[permit_key]
+        owner_org, owner_name, owner_identity, row_json, _tb, art, prod_omr = today[permit_key]
 
         try:
             row_dict = json.loads(row_json) if row_json else {}
@@ -528,23 +553,35 @@ def apply_snapshot(
         grunn = 1 if is_grunnrente_pliktig(row_dict) else 0
 
         conn.execute(
-            """
-            INSERT INTO permit_current(
-                permit_key, owner_orgnr, owner_name, owner_identity, snapshot_date,
-                row_json, grunnrente_pliktig, art
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(permit_key) DO UPDATE SET
-                owner_orgnr=excluded.owner_orgnr,
-                owner_name=excluded.owner_name,
-                owner_identity=excluded.owner_identity,
-                snapshot_date=excluded.snapshot_date,
-                row_json=excluded.row_json,
-                grunnrente_pliktig=excluded.grunnrente_pliktig,
-                art=excluded.art;
-            """,
-            (permit_key, owner_org or None, owner_name or None, owner_identity, snapshot_date, row_json, grunn, art),
-        )
+    """
+    INSERT INTO permit_current(
+        permit_key, owner_orgnr, owner_name, owner_identity, snapshot_date,
+        row_json, grunnrente_pliktig, art, prod_omr
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(permit_key) DO UPDATE SET
+        owner_orgnr=excluded.owner_orgnr,
+        owner_name=excluded.owner_name,
+        owner_identity=excluded.owner_identity,
+        snapshot_date=excluded.snapshot_date,
+        row_json=excluded.row_json,
+        grunnrente_pliktig=excluded.grunnrente_pliktig,
+        art=excluded.art,
+        prod_omr=excluded.prod_omr
+    """,
+    (
+        permit_key,
+        owner_org or None,
+        owner_name or None,
+        owner_identity,
+        snapshot_date,
+        row_json,
+        grunn,
+        art,
+        prod_omr,
+    ),
+)
+
 
 
     # 7) Marker snapshot
