@@ -356,12 +356,11 @@ function renderPermitCardUnified({
         ${ident ? `<a class="link" href="#/owner/${encodeURIComponent(ident)}">${escapeHtml(ident)}</a>` : "—"}
       </div>
       
-      ${(vmPill || lpPill) ? `
-        <div style="margin-top:10px">
-          ${vmPill ? `<div><span class="muted">Vannmiljø:</span> ${vmPill}</div>` : ""}
-          ${lpPill ? `<div style="margin-top:6px"><span class="muted">Plassering:</span> ${lpPill}</div>` : ""}
-        </div>
-      ` : ""}
+      <div style="margin-top:10px">
+        <div><span class="muted">Vannmiljø:</span> ${vmPill || `<span class="muted">—</span>`}</div>
+        <div style="margin-top:6px"><span class="muted">Plassering:</span> ${lpPill || `<span class="muted">—</span>`}</div>
+      </div>
+
 
       ${tidsbegrenset ? `<div style="margin-top:8px"><span class="muted">Tidsbegrenset:</span> ${escapeHtml(tidsbegrenset)}</div>` : ""}
 
