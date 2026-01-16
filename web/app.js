@@ -667,15 +667,15 @@ function renderPermit(permitKey) {
 
     const formal = String(rowDict["FORMÅL"] ?? "").trim();
     const produksjonsstadium = String(rowDict["PRODUKSJONSSTADIUM"] ?? rowDict["PRODUKSJONSFORM"] ?? "").trim();
-
     const kapRaw = String(rowDict["TILL_KAP"] ?? "").trim();
     const enh = String(rowDict["TILL_ENHET"] ?? "").trim();
     const kapFmt = formatKapNoTrailing00(kapRaw);
     const kapasitet = kapFmt ? `${kapFmt}${enh ? " " + enh : ""}` : "";
-
     const prodOmr = String(rowDict["PROD_OMR"] ?? "").trim() || "N/A";
-
     const grunnrente = Number(now.grunnrente_pliktig) === 1;
+    const vannmiljo = String(rowDict["VANNMILJØ"] ?? rowDict["VANNMILJO"] ?? rowDict["VANNMILJ"] ?? "").trim();
+    const lokPlass  = String(rowDict["LOK_PLASS"] ?? rowDict["LOKPLASS"] ?? rowDict["PLASSERING"] ?? "").trim();
+
 
     renderPermitCardUnified({
       permitKey: String(now.permit_key ?? permitKey),
@@ -719,13 +719,14 @@ function renderPermit(permitKey) {
     const artText = String((snapRow?.art ?? snapDict["ART"] ?? "")).trim();
     const formal = String(snapDict["FORMÅL"] ?? "").trim();
     const produksjonsstadium = String(snapDict["PRODUKSJONSSTADIUM"] ?? snapDict["PRODUKSJONSFORM"] ?? "").trim();
-
     const kapRaw = String(snapDict["TILL_KAP"] ?? "").trim();
     const enh = String(snapDict["TILL_ENHET"] ?? "").trim();
     const kapFmt = formatKapNoTrailing00(kapRaw);
     const kapasitet = kapFmt ? `${kapFmt}${enh ? " " + enh : ""}` : "";
-
     const prodOmr = String(snapDict["PROD_OMR"] ?? "").trim() || "N/A";
+    const vannmiljo = String(snapDict["VANNMILJØ"] ?? snapDict["VANNMILJO"] ?? snapDict["VANNMILJ"] ?? "").trim();
+    const lokPlass  = String(snapDict["LOK_PLASS"] ?? snapDict["LOKPLASS"] ?? snapDict["PLASSERING"] ?? "").trim();
+
 
     let grunnrenteValue = false;
     if (snapRow && snapRow.grunnrente_pliktig != null && snapRow.grunnrente_pliktig !== "") {
