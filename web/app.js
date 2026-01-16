@@ -750,6 +750,8 @@ function renderPermit(permitKey) {
       produksjonsstadium,
       kapasitet,
       prodOmr,
+      vannmiljo,
+      lokPlass,
       tidsbegrenset: tidsbegrensetCardDisplay,
     });
   }
