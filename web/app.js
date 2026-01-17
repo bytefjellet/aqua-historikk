@@ -940,17 +940,22 @@ function renderPermit(permitKey) {
   `, [permitKey]);
 
   const hist = execAll(`
-    SELECT
-      valid_from AS valid_from,
-      valid_to   AS valid_to,
-      COALESCE(NULLIF(valid_to,''), 'Aktiv') AS valid_to_label,
-      owner_name AS owner_name,
-      owner_identity AS owner_identity,
-      tidsbegrenset AS tidsbegrenset
-    FROM ownership_history
-    WHERE UPPER(REPLACE(TRIM(permit_key), ' ', '')) = ?
-    ORDER BY date(valid_from), id;
-  `, [permitKey]);
+  SELECT
+    valid_from AS valid_from,
+    valid_to   AS valid_to,
+    COALESCE(NULLIF(valid_to,''), 'Aktiv') AS valid_to_label,
+    owner_name AS owner_name,
+    owner_identity AS owner_identity,
+    tidsbegrenset AS tidsbegrenset
+  FROM ownership_history
+  WHERE
+    UPPER(REPLACE(REPLACE(TRIM(permit_key), ' ', ''), '-', '')) =
+    UPPER(REPLACE(REPLACE(TRIM(?),         ' ', ''), '-', ''))
+  ORDER BY date(valid_from), id;
+`, [permitKey]);
+
+console.log("ownership_history rows:", hist.length, "for", permitKey);
+
 
   if (!now && hist.length === 0) {
     setPermitEmptyStateContent({
