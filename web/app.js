@@ -154,6 +154,51 @@ function hasColumn(table, col) {
 function parseJsonSafe(s) {
   try { return s ? JSON.parse(s) : {}; } catch { return {}; }
 }
+function getProdOmrFromRowJson(rowJsonText) {
+  const d = parseJsonSafe(rowJsonText);
+  return d["PROD_OMR"];
+}
+
+function buildAreaIndexOnce() {
+  if (areaIndexBuilt) return;
+
+  areaOwnersIndex = new Map();
+  areaPermitCount = new Map();
+
+  const rows = execAll(`
+    SELECT owner_name, owner_identity, row_json
+    FROM permit_current;
+  `);
+
+  for (const r of rows) {
+    const areaRaw = getProdOmrFromRowJson(r.row_json);
+    const code = parseProdAreaCode(areaRaw);
+    if (!code) continue;
+
+    const ident = String(r.owner_identity ?? "").trim().replace(/\s+/g, "");
+    const name  = String(r.owner_name ?? "").trim();
+
+    // total antall tillatelser i området
+    areaPermitCount.set(code, (areaPermitCount.get(code) || 0) + 1);
+
+    // per selskap i området
+    if (!areaOwnersIndex.has(code)) areaOwnersIndex.set(code, new Map());
+    const m = areaOwnersIndex.get(code);
+
+    // nøkkel: orgnr hvis finnes, ellers navn
+    const key = ident || name || "(ukjent)";
+    const prev = m.get(key) || { owner_name: name, owner_identity: ident, count: 0 };
+    prev.count += 1;
+
+    // behold beste verdier
+    if (!prev.owner_name && name) prev.owner_name = name;
+    if (!prev.owner_identity && ident) prev.owner_identity = ident;
+
+    m.set(key, prev);
+  }
+
+  areaIndexBuilt = true;
+}
 
 function iso10(s) {
   if (!s) return null;
