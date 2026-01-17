@@ -156,21 +156,26 @@ function getProductionAreaInfo(prodOmr) {
   return { area, name, status: statusNorm };
 }
 
-function trafficHtml(area, statusNorm) {
-  const cls = trafficClass(statusNorm);
+function trafficHtml(code, statusNorm) {
+  const cls =
+    statusNorm === "GREEN"  ? "traffic--green"  :
+    statusNorm === "YELLOW" ? "traffic--yellow" :
+    statusNorm === "RED"    ? "traffic--red"    :
+                              "traffic--unknown";
+
   const label =
-    statusNorm === "GREEN" ? "Grønn" :
-    statusNorm === "YELLOW" ? "Gul" :
-    statusNorm === "RED" ? "Rød" :
-    "Ukjent";
+    statusNorm === "GREEN"  ? "Grønn"  :
+    statusNorm === "YELLOW" ? "Gul"    :
+    statusNorm === "RED"    ? "Rød"    :
+                              "Ukjent";
 
   return `
-    <span class="traffic ${cls}" title="Status: ${escapeHtml(label)}">
-      <span class="traffic-dot" aria-hidden="true"></span>
-      <span>${escapeHtml(area)}</span>
+    <span class="traffic ${cls}" title="Status: ${label}">
+      <span class="traffic-num">${escapeHtml(code)}</span>
     </span>
   `;
 }
+
 function parseProdAreaCode(raw) {
   const s = String(raw ?? "").trim();
   if (!s) return null;
@@ -644,18 +649,17 @@ function renderPermitCardUnified({
           const info = getProductionAreaInfo(areaRaw);
 
           const areaLine = trafficHtml(info.code, info.status);
-          const nameLine = info.name
-            ? `<div class="muted" style="margin-top:4px">${escapeHtml(info.name)}</div>`
+          const nameInline = info.name
+            ? `<span class="muted" style="margin-left:6px">${escapeHtml(info.name)}</span>`
             : "";
 
           return `
             <div style="margin-top:6px">
-              <div>
-                <span class="muted">Produksjonsområde:</span> ${areaLine}
-              </div>
-              ${nameLine}
+              <span class="muted">Produksjonsområde:</span>
+              ${areaLine}${nameInline}
             </div>
           `;
+
         })()}
 
         ${(vmPill || lpPill) ? `

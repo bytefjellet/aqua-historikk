@@ -421,6 +421,7 @@ a:visited { color: inherit; }
    (egen stil, ikke pill-gul)
    ========================= */
 
+/* Trafikklys uten ikon: fargemerking på tallet */
 .traffic {
   display: inline-flex;
   align-items: center;
@@ -428,35 +429,38 @@ a:visited { color: inherit; }
   font-weight: 700;
 }
 
-/* selve "lyset" */
-.traffic-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  box-shadow: 0 0 0 2px rgba(0,0,0,.06);
-  border: 1px solid rgba(0,0,0,.10);
-}
-
-/* tekstfarge + dot-farge */
-.traffic--green { color: #0f6a2f; }
-.traffic--green .traffic-dot { background: #22c55e; }
-
-/* Gul: mer "amber/gull", mindre rødlig */
-.traffic--yellow { color: #a16207; }                 /* amber-700-ish */
-.traffic--yellow .traffic-dot { background: #f59e0b; } /* amber-500 */
-
-.traffic--red { color: #b91c1c; }
-.traffic--red .traffic-dot { background: #ef4444; }
-
-.traffic--unknown { color: var(--muted); }
-.traffic--unknown .traffic-dot { background: #9ca3af; }
-
-/* Litt "badge" rundt selve tallet for bedre lesbarhet */
+/* Selve tallet som badge */
 .traffic-num {
   display: inline-block;
+  min-width: 28px;
+  text-align: center;
   padding: 0 8px;
-  line-height: 20px;
+  line-height: 22px;
   border-radius: 999px;
-  background: #f3f4f6;           /* lys grå */
-  border: 1px solid rgba(0,0,0,.06);
+  border: 1px solid rgba(0,0,0,.08);
 }
+
+/* Status-farger (bakgrunn + tekst) */
+.traffic--green .traffic-num {
+  background: #e7f7ed;
+  color: #0f6a2f;
+}
+
+.traffic--yellow .traffic-num {
+  background: #fffbeb; /* veldig lys gul */
+  color: #a16207;      /* tydelig gul/amber */
+}
+
+.traffic--red .traffic-num {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.traffic--unknown .traffic-num {
+  background: #f3f4f6;
+  color: var(--muted);
+}
+
+/* Skjul dot hvis den finnes fra før */
+.traffic-dot { display: none !important; }
+
