@@ -869,9 +869,9 @@ function renderOwnerCardUnified({
         <div class="year-chips" style="margin-top:6px">
           ${years.map(y => `<span class="year-chip year-chip--active">${escapeHtml(y)}</span>`).join("")}
         </div>
-        <div class="muted-small" style="margin-top:6px">
-          År der innehaveren har vært eier av tillatelser som i dag er grunnrentepliktige.
-          Historikk før 2025 er beregnet ut fra transaksjonsdatoer.
+        <div class="muted" style="margin-top:6px">
+          Angir år der innehaveren har vært eier av tillatelser som i dag er grunnrentepliktige.
+          Historikk før 2025 er beregnet ut fra opplysninger om overføringer hentet fra Akvakulturregisteret.
         </div>
       `
       : "";
