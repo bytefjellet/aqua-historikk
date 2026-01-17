@@ -141,60 +141,33 @@ function getProductionAreaInfo(prodAreaRaw) {
 }
 
 function getTransferEventsForPermit(permitKey) {
-  const key = normPermitForSql(permitKey);
+  const key = String(permitKey ?? "").trim().toUpperCase();
 
-  const t = "license_transfers";
-
-  // permit-kolonne
-  const permitCol = pickCol(t, ["permit_key", "license_key", "tillatelse", "permit"]);
-  if (!permitCol) {
-    console.warn("Fant ikke permit-kolonne i license_transfers");
-    return [];
-  }
-
-  // dato-kolonne (velg den som finnes)
-  const dateCol = pickCol(t, ["transfer_date", "date", "event_date", "snapshot_date", "valid_from", "dato"]);
-  if (!dateCol) {
-    console.warn("Fant ikke dato-kolonne i license_transfers");
-  }
-
-  // fra/til (velg beste match)
-  const fromNameCol  = pickCol(t, ["from_owner_name", "seller_name", "old_owner_name", "from_name"]);
-  const fromIdentCol = pickCol(t, ["from_owner_identity", "seller_orgnr", "seller_identity", "old_owner_identity", "from_identity"]);
-
-  const toNameCol  = pickCol(t, ["to_owner_name", "buyer_name", "new_owner_name", "to_name"]);
-  const toIdentCol = pickCol(t, ["to_owner_identity", "buyer_orgnr", "buyer_identity", "new_owner_identity", "to_identity"]);
-
-  // fallback hvis tabellen bare har “ny eier”
-  const ownerNameCol  = toNameCol  || pickCol(t, ["owner_name", "new_owner", "innehaver_navn"]);
-  const ownerIdentCol = toIdentCol || pickCol(t, ["owner_identity", "owner_orgnr", "orgnr", "innehaver_orgnr"]);
-
-  const selectCols = [
-    dateCol ? `${dateCol} AS event_date` : `NULL AS event_date`,
-    fromNameCol ? `${fromNameCol} AS from_name` : `NULL AS from_name`,
-    fromIdentCol ? `${fromIdentCol} AS from_ident` : `NULL AS from_ident`,
-    ownerNameCol ? `${ownerNameCol} AS to_name` : `NULL AS to_name`,
-    ownerIdentCol ? `${ownerIdentCol} AS to_ident` : `NULL AS to_ident`,
-  ].join(", ");
-
-  const orderBy = dateCol ? `ORDER BY date(${dateCol}) ASC` : "";
+  // Velg dato-kolonne: journal_date hvis finnes, ellers updated_at, ellers fetched_at
+  const dateCol =
+    hasColumn("license_transfers", "journal_date") ? "journal_date" :
+    hasColumn("license_transfers", "updated_at") ? "updated_at" :
+    hasColumn("license_transfers", "fetched_at") ? "fetched_at" :
+    null;
 
   const rows = execAll(`
-    SELECT ${selectCols}
-    FROM ${t}
-    WHERE UPPER(TRIM(${permitCol})) = UPPER(TRIM(?))
-    ${orderBy};
+    SELECT
+      ${dateCol ? `${dateCol} AS event_date` : `NULL AS event_date`},
+      current_owner_name  AS to_name,
+      current_owner_orgnr AS to_ident
+    FROM license_transfers
+    WHERE UPPER(TRIM(permit_key)) = UPPER(TRIM(?))
+    ORDER BY
+      ${dateCol ? `date(${dateCol}) ASC, id ASC` : `id ASC`};
   `, [key]);
 
-  // normaliser
   return rows.map(r => ({
     event_date: iso10(r.event_date) || "",
-    from_name: String(r.from_name ?? "").trim(),
-    from_ident: String(r.from_ident ?? "").trim(),
     to_name: String(r.to_name ?? "").trim(),
     to_ident: String(r.to_ident ?? "").trim(),
   }));
 }
+
 
 function getOriginalOwnerForPermit(permitKey) {
   const key = String(permitKey ?? "").trim().toUpperCase();
@@ -1183,64 +1156,71 @@ console.log("ownership_history rows:", hist.length, "for", permitKey);
   }
 
   // --- NY: Transaksjonshistorikk basert på license_original_owner + license_transfers ---
-  const tb = safeEl("permitOwnershipTimeline").querySelector("tbody");
-  tb.innerHTML = "";
+const tb = safeEl("permitOwnershipTimeline").querySelector("tbody");
+tb.innerHTML = "";
 
-  const original = getOriginalOwnerForPermit(permitKey);
-  const transfers = getTransferEventsForPermit(permitKey);
+const original = getOriginalOwnerForPermit(permitKey);
+const transfers = getTransferEventsForPermit(permitKey);
 
-  // Bygg event-liste (eldst -> nyest)
-  const events = [];
+// Bygg events (eldst -> nyest) med chaining
+const events = [];
 
-  // Opprinnelig innehaver som startpunkt
-  if (original) {
-    events.push({
-      date: "",
-      from_name: "",
-      from_ident: "",
-      to_name: original.name,
-      to_ident: original.ident,
-      kind: "original"
-    });
-  }
+// Start med opprinnelig innehaver
+let prevName = original?.name || "";
+let prevIdent = original?.ident || "";
 
-  // Transfers
-  for (const t of transfers) {
-    events.push({
-      date: t.event_date || "",
-      from_name: t.from_name,
-      from_ident: t.from_ident,
-      to_name: t.to_name,
-      to_ident: t.to_ident,
-      kind: "transfer"
-    });
-  }
+if (original) {
+  events.push({
+    kind: "original",
+    date: "",
+    from_name: "",
+    from_ident: "",
+    to_name: prevName,
+    to_ident: prevIdent,
+  });
+}
 
-  // Vis nyest øverst
-  const display = [...events].reverse();
+for (const t of transfers) {
+  const toName = t.to_name;
+  const toIdent = t.to_ident;
 
-  for (const e of display) {
-    const tr = document.createElement("tr");
+  events.push({
+    kind: "transfer",
+    date: t.event_date || "",
+    from_name: prevName,
+    from_ident: prevIdent,
+    to_name: toName,
+    to_ident: toIdent,
+  });
 
-    const dateText =
-      e.kind === "original" ? "Opprinnelig" : (e.date || "—");
+  prevName = toName;
+  prevIdent = toIdent;
+}
 
-    const fromIdent = String(e.from_ident ?? "").trim();
-    const toIdent = String(e.to_ident ?? "").trim();
+// Vis nyest øverst
+const display = [...events].reverse();
 
-    tr.innerHTML = `
-      <td>${escapeHtml(dateText)}</td>
-      <td>${escapeHtml(e.from_name || (e.kind === "original" ? "" : "—"))}</td>
-      <td>${fromIdent ? escapeHtml(fromIdent) : (e.kind === "original" ? "" : "—")}</td>
-      <td>${escapeHtml(e.to_name || "—")}</td>
-      <td>${
-        toIdent
-          ? `<a class="link" href="#/owner/${encodeURIComponent(toIdent)}">${escapeHtml(toIdent)}</a>`
-          : "—"
-      }</td>
-    `;
-    tb.appendChild(tr);
-    }
+for (const e of display) {
+  const tr = document.createElement("tr");
+
+  const dateText = e.kind === "original" ? "Opprinnelig" : (e.date || "—");
+  const fromIdent = String(e.from_ident ?? "").trim();
+  const toIdent = String(e.to_ident ?? "").trim();
+
+  tr.innerHTML = `
+    <td>${escapeHtml(dateText)}</td>
+    <td>${escapeHtml(e.from_name || (e.kind === "original" ? "" : "—"))}</td>
+    <td>${fromIdent ? escapeHtml(fromIdent) : (e.kind === "original" ? "" : "—")}</td>
+    <td>${escapeHtml(e.to_name || "—")}</td>
+    <td>${
+      toIdent
+        ? `<a class="link" href="#/owner/${encodeURIComponent(toIdent)}">${escapeHtml(toIdent)}</a>`
+        : "—"
+    }</td>
+  `;
+  tb.appendChild(tr);
+}
+  
 
 }
 
