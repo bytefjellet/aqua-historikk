@@ -2419,6 +2419,164 @@ function parseHash() {
   return { view: "now" };
 }
 
+function renderAreas() {
+  setActiveTab("tab-areas");
+  showView("view-areas");
+
+  // Bygg indeks over selskaper per område (én gang)
+  buildAreaIndexOnce();
+
+  // Hent siste status per område
+  const statusRows = execAll(`
+    WITH latest AS (
+      SELECT prod_area_code, MAX(snapshot_date) AS max_date
+      FROM production_area_status
+      GROUP BY prod_area_code
+    )
+    SELECT
+      pas.prod_area_code AS prod_area_code,
+      pas.prod_area_status AS prod_area_status,
+      pas.snapshot_date AS snapshot_date
+    FROM production_area_status pas
+    JOIN latest l
+      ON l.prod_area_code = pas.prod_area_code
+     AND l.max_date = pas.snapshot_date
+    ORDER BY pas.prod_area_code;
+  `);
+
+  const statusByCode = new Map();
+  for (const r of statusRows) {
+    statusByCode.set(Number(r.prod_area_code), normTrafficStatus(r.prod_area_status));
+  }
+
+  const tbody = safeEl("areasTable").querySelector("tbody");
+  tbody.innerHTML = "";
+
+  // Summer nederst
+  let sumNon = 0;
+  let sumGrs = 0;
+  let sumCap = 0;
+
+  for (let code = 1; code <= 13; code++) {
+    const status = statusByCode.get(code) || null;
+
+    const nonGrs = Number(areaPermitCountNonGrs.get(code) || 0);
+    const grs    = Number(areaPermitCountGrs.get(code) || 0);
+
+    const capTN  = Number(areaCapacityTN.get(code) || 0);
+    const capText = capTN > 0
+      ? `${Math.round(capTN).toLocaleString("nb-NO")} TN`
+      : "—";
+
+    sumNon += nonGrs;
+    sumGrs += grs;
+    sumCap += capTN;
+
+    const tr = document.createElement("tr");
+    tr.dataset.areaCode = String(code);
+    tr.innerHTML = `
+      <td>
+        <button class="expander-btn" type="button" aria-label="Vis detaljer" aria-expanded="false">
+          <span class="chev">▶</span>
+        </button>
+      </td>
+      <td>
+        ${trafficHtml(code, status)}
+        <span class="muted" style="margin-left:6px">${escapeHtml(PRODUCTION_AREA_NAMES[code] || "")}</span>
+      </td>
+      <td>${escapeHtml(
+        status === "GREEN" ? "Grønn" :
+        status === "YELLOW" ? "Gul" :
+        status === "RED" ? "Rød" : "Ukjent"
+      )}</td>
+      <td style="text-align:right">${escapeHtml(nonGrs.toLocaleString("nb-NO"))}</td>
+      <td style="text-align:right">${escapeHtml(grs.toLocaleString("nb-NO"))}</td>
+      <td style="text-align:right">${escapeHtml(capText)}</td>
+    `;
+    tbody.appendChild(tr);
+
+    const detailsTr = document.createElement("tr");
+    detailsTr.className = "details-row hidden";
+    detailsTr.dataset.detailsFor = String(code);
+    detailsTr.innerHTML = `
+      <td colspan="6">
+        <div class="details-box">
+          <div class="muted" style="margin-bottom:8px">Klikk pilen for å se selskaper…</div>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(detailsTr);
+  }
+
+  // --- Sumrad nederst ---
+  const sumCapText = sumCap > 0
+    ? `${Math.round(sumCap).toLocaleString("nb-NO")} TN`
+    : "—";
+
+  const sumTr = document.createElement("tr");
+  sumTr.innerHTML = `
+    <td></td>
+    <td style="font-weight:700">Sum</td>
+    <td></td>
+    <td style="text-align:right;font-weight:700">${escapeHtml(sumNon.toLocaleString("nb-NO"))}</td>
+    <td style="text-align:right;font-weight:700">${escapeHtml(sumGrs.toLocaleString("nb-NO"))}</td>
+    <td style="text-align:right;font-weight:700">${escapeHtml(sumCapText)}</td>
+  `;
+  tbody.appendChild(sumTr);
+
+  // Klikk-håndtering (delegert)
+  tbody.onclick = (e) => {
+    const btn = e.target.closest(".expander-btn");
+    if (!btn) return;
+
+    const row = e.target.closest("tr");
+    if (!row) return;
+
+    const code = Number(row.dataset.areaCode);
+    if (!code) return; // sumrad har ingen areaCode
+
+    const detailsRow = tbody.querySelector(`tr.details-row[data-details-for="${code}"]`);
+    if (!detailsRow) return;
+
+    const isOpen = !detailsRow.classList.contains("hidden");
+
+    detailsRow.classList.toggle("hidden", isOpen);
+    row.classList.toggle("is-open", !isOpen);
+    btn.setAttribute("aria-expanded", String(!isOpen));
+
+    if (!isOpen) {
+      const box = detailsRow.querySelector(".details-box");
+      if (!box) return;
+
+      const ownersMap = areaOwnersIndex.get(code) || new Map();
+      const owners = Array.from(ownersMap.values())
+        .sort((a, b) => (b.count - a.count) || String(a.owner_name).localeCompare(String(b.owner_name), "nb", { sensitivity: "base" }));
+
+      if (owners.length === 0) {
+        box.innerHTML = `<div class="details-empty">Ingen aktive tillatelser funnet i dette området.</div>`;
+        return;
+      }
+
+      box.innerHTML = `
+        <div class="details-grid">
+          ${owners.map(o => {
+            const name = escapeHtml(o.owner_name || "(ukjent)");
+            const ident = String(o.owner_identity ?? "").trim();
+            const left = ident
+              ? `<a class="link" href="#/owner/${encodeURIComponent(ident)}">${name}</a> <span class="muted-small">(${escapeHtml(ident)})</span>`
+              : `${name}`;
+            return `
+              <div class="details-item">
+                <div>${left}</div>
+                <div class="details-count">${escapeHtml(String(o.count))}</div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
+  };
+}
 
 function renderRoute() {
   if (!db) return;
