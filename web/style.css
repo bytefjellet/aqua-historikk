@@ -288,7 +288,7 @@ h3 { margin: 0 0 8px; }
 }
 
 /* =========================
-   Pills (Permit)
+   Pills
    ========================= */
 .pills {
   display: flex;
@@ -315,6 +315,31 @@ h3 { margin: 0 0 8px; }
 .pill--red {
   background: #fee2e2; /* rød soft */
   color: #b91c1c;      /* rød tekst */
+}
+
+.year-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.year-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: .85rem;
+  font-weight: 650;
+  border: 1px solid var(--border);
+  background: #f3f4f6; /* lys grå */
+  color: var(--text);
+}
+
+.year-chip--active {
+  background: var(--primary-soft);
+  border-color: #cfe0ff;
+  color: var(--primary);
 }
 
 /* =========================

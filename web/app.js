@@ -877,13 +877,26 @@ function renderOwnerCardUnified({
     <div style="margin-top:10px">
       <div><span class="muted">Org.nr.:</span> ${escapeHtml(ident || "—")}</div>
       ${(() => {
-        const y = (grunnYears || []).filter(Boolean);
-        return `
-          <div style="margin-top:10px">
-            <span class="muted">Grunnrentepliktig i år:</span> ${escapeHtml(y.length ? y.join(", ") : "—")}
-          </div>
-        `;
-      })()}
+        const years = (grunnYears || []).filter(Boolean);
+
+          const chips = years.length
+            ? `<div class="year-chips">
+                ${years.map(y => `<span class="year-chip year-chip--active">${escapeHtml(y)}</span>`).join("")}
+              </div>`
+            : `<div class="muted" style="margin-top:6px">—</div>`;
+
+          return `
+            <div style="margin-top:10px">
+              <div><span class="muted">Grunnrentepliktig i år:</span></div>
+              ${chips}
+              <div class="muted-small" style="margin-top:6px">
+                År der innehaveren har vært eier av tillatelser som i dag er grunnrentepliktige.
+                Historikk før 2025 er beregnet ut fra transaksjonsdatoer.
+              </div>
+            </div>
+          `;
+        })()} 
+
 
 
       <div style="margin-top:10px">
