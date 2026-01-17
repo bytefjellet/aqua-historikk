@@ -336,6 +336,57 @@ function extractCapacityTN(rowJsonText) {
   const num = Number(kapRaw.replace(",", "."));
   return Number.isFinite(num) ? num : 0;
 }
+function isOwnerAtDate(ownerOrgnr, permitKey, isoDate) {
+  // isoDate: "YYYY-MM-DD"
+  const row = one(`
+    SELECT 1 AS ok
+    FROM ownership_history
+    WHERE
+      UPPER(REPLACE(REPLACE(TRIM(permit_key), ' ', ''), '-', '')) =
+      UPPER(REPLACE(REPLACE(TRIM(?),         ' ', ''), '-', ''))
+      AND REPLACE(TRIM(owner_identity), ' ', '') = ?
+      AND date(valid_from) <= date(?)
+      AND (
+        valid_to IS NULL OR TRIM(valid_to) = '' OR date(valid_to) >= date(?)
+      )
+    LIMIT 1;
+  `, [permitKey, ownerOrgnr, isoDate, isoDate]);
+
+  return !!row;
+}
+function getGrunnrenteYearsForOwner(ownerOrgnr, fromYear = 2023) {
+  const years = [];
+  const nowYear = new Date().getFullYear();
+
+  // hent alle snapshots som er grunnrentepliktige (fra 2023 og frem)
+  const snaps = execAll(`
+    SELECT permit_key, snapshot_date
+    FROM permit_snapshot
+    WHERE grunnrente_pliktig = 1
+      AND date(snapshot_date) >= date(?)
+    ORDER BY snapshot_date;
+  `, [`${fromYear}-01-01`]);
+
+  // Gruppér snapshots per år, men vi bryter tidlig når vi finner en match for året
+  const found = new Set();
+
+  for (const s of snaps) {
+    const d = iso10(s.snapshot_date);
+    if (!d) continue;
+    const y = Number(d.slice(0, 4));
+    if (y < fromYear || y > nowYear) continue;
+    if (found.has(y)) continue;
+
+    const key = String(s.permit_key ?? "").trim();
+    if (!key) continue;
+
+    if (isOwnerAtDate(ownerOrgnr, key, d)) {
+      found.add(y);
+    }
+  }
+
+  return Array.from(found).sort((a, b) => a - b);
+}
 
 // -------------------------------
 // NYTT: pill-regler (aktive)
@@ -738,7 +789,9 @@ function renderOwnerCardUnified({
   formerPermitCount,
   activeCapacityTN = 0,
   grunnrenteCapacityTN = 0,
+  grunnYears = [],
 }) {
+
   const card = safeEl("ownerCard");
   card.classList.remove("hidden");
 
@@ -751,9 +804,6 @@ function renderOwnerCardUnified({
   if (v <= 0) return "";
   return ` <span class="muted-small">(samlet kapasitet: ${Math.round(v).toLocaleString("nb-NO")} TN)</span>`;
 }
-
-
-
 
   console.log("activeCapacityTN:", activeCapacityTN, "grunnrenteCapacityTN:", grunnrenteCapacityTN);
 
@@ -773,6 +823,15 @@ function renderOwnerCardUnified({
 
     <div style="margin-top:10px">
       <div><span class="muted">Org.nr.:</span> ${escapeHtml(ident || "—")}</div>
+      ${(() => {
+        const y = (grunnYears || []).filter(Boolean);
+        return `
+          <div style="margin-top:10px">
+            <span class="muted">Grunnrentepliktig i år:</span> ${escapeHtml(y.length ? y.join(", ") : "—")}
+          </div>
+        `;
+      })()}
+
 
       <div style="margin-top:10px">
         <div>
@@ -1162,64 +1221,41 @@ tb.innerHTML = "";
 const original = getOriginalOwnerForPermit(permitKey);
 const transfers = getTransferEventsForPermit(permitKey);
 
-// Bygg events (eldst -> nyest) med chaining
-const events = [];
+// Vi viser "ny eier etter dato" (to_*)
+const rows = [];
 
-// Start med opprinnelig innehaver
-let prevName = original?.name || "";
-let prevIdent = original?.ident || "";
-
+// opprinnelig nederst
 if (original) {
-  events.push({
-    kind: "original",
-    date: "",
-    from_name: "",
-    from_ident: "",
-    to_name: prevName,
-    to_ident: prevIdent,
+  rows.push({
+    dateText: "Opprinnelig",
+    name: original.name || "—",
+    ident: original.ident || ""
   });
 }
 
+// transfers: hver rad representerer ny innehaver etter dato
 for (const t of transfers) {
-  const toName = t.to_name;
-  const toIdent = t.to_ident;
-
-  events.push({
-    kind: "transfer",
-    date: t.event_date || "",
-    from_name: prevName,
-    from_ident: prevIdent,
-    to_name: toName,
-    to_ident: toIdent,
+  rows.push({
+    dateText: t.event_date || "—",
+    name: t.to_name || "—",
+    ident: t.to_ident || ""
   });
-
-  prevName = toName;
-  prevIdent = toIdent;
 }
 
-// Vis nyest øverst
-const display = [...events].reverse();
+// Nyest øverst (opprinnelig nederst)
+rows.reverse();
 
-for (const e of display) {
+for (const r of rows) {
+  const ident = String(r.ident ?? "").trim();
   const tr = document.createElement("tr");
-
-  const dateText = e.kind === "original" ? "Opprinnelig" : (e.date || "—");
-  const fromIdent = String(e.from_ident ?? "").trim();
-  const toIdent = String(e.to_ident ?? "").trim();
-
   tr.innerHTML = `
-    <td>${escapeHtml(dateText)}</td>
-    <td>${escapeHtml(e.from_name || (e.kind === "original" ? "" : "—"))}</td>
-    <td>${fromIdent ? escapeHtml(fromIdent) : (e.kind === "original" ? "" : "—")}</td>
-    <td>${escapeHtml(e.to_name || "—")}</td>
-    <td>${
-      toIdent
-        ? `<a class="link" href="#/owner/${encodeURIComponent(toIdent)}">${escapeHtml(toIdent)}</a>`
-        : "—"
-    }</td>
+    <td>${escapeHtml(r.dateText)}</td>
+    <td>${escapeHtml(r.name)}</td>
+    <td>${ident ? `<a class="link" href="#/owner/${encodeURIComponent(ident)}">${escapeHtml(ident)}</a>` : "—"}</td>
   `;
   tb.appendChild(tr);
 }
+
   
 
 }
@@ -1329,6 +1365,8 @@ const grunnrenteCapacityTN = active.reduce(
 );
 
   const grunnrenteActiveCount = active.reduce((acc, r) => acc + (Number(r.grunnrente_pliktig) === 1 ? 1 : 0), 0);
+  const grunnYears = getGrunnrenteYearsForOwner(ownerIdentityNorm, 2023);
+
 
   setOwnerEmptyStateVisible(false);
   setOwnerResultsVisible(true);
@@ -1341,7 +1379,9 @@ const grunnrenteCapacityTN = active.reduce(
   formerPermitCount: Number(stats.former_permits ?? 0),
   activeCapacityTN,
   grunnrenteCapacityTN,
+  grunnYears,
 });
+
 
 
   // --- FILTER: grunnrente + formål (kun for aktiv-tabellen) ---
