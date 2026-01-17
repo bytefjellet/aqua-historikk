@@ -535,15 +535,16 @@ function buildGrunnrenteOwnerCountsForDate(snapshotDateIso10) {
   return m;
 }
 
-function computeGrunnrenteChanges() {
-  const { d1, d2 } = getLatestAndPreviousSnapshotDates();
-  if (!d2) return { d1, d2, started: [], stopped: [] };
+function uniqSorted(arr) {
+  return Array.from(new Set((arr || []).map(x => String(x || "").trim()).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b, "nb", { numeric: true, sensitivity: "base" }));
+}
 
+function computeGrunnrenteChanges(d1, d2) {
   const before = d1 ? buildGrunnrenteOwnerCountsForDate(d1) : new Map();
-  const after  = buildGrunnrenteOwnerCountsForDate(d2);
+  const after  = d2 ? buildGrunnrenteOwnerCountsForDate(d2) : new Map();
 
   const all = new Set([...before.keys(), ...after.keys()]);
-
   const started = [];
   const stopped = [];
 
@@ -554,13 +555,22 @@ function computeGrunnrenteChanges() {
     const beforeCnt = a ? a.count : 0;
     const afterCnt  = b ? b.count : 0;
 
+    const permitsBefore = uniqSorted(a?.permits || []);
+    const permitsAfter  = uniqSorted(b?.permits || []);
+
+    const added = permitsAfter.filter(p => !new Set(permitsBefore).has(p));
+    const removed = permitsBefore.filter(p => !new Set(permitsAfter).has(p));
+
     if (beforeCnt === 0 && afterCnt > 0) {
       started.push({
         orgnr,
         name: b?.name || a?.name || "",
         beforeCnt,
         afterCnt,
-        permits: b?.permits || [],
+        permitsBefore,
+        permitsAfter,
+        added,
+        removed,
       });
     } else if (beforeCnt > 0 && afterCnt === 0) {
       stopped.push({
@@ -568,17 +578,20 @@ function computeGrunnrenteChanges() {
         name: a?.name || b?.name || "",
         beforeCnt,
         afterCnt,
-        permits: a?.permits || [],
+        permitsBefore,
+        permitsAfter,
+        added,
+        removed,
       });
     }
   }
 
-  // sort: mest relevante øverst
   started.sort((x, y) => (y.afterCnt - x.afterCnt) || x.orgnr.localeCompare(y.orgnr));
   stopped.sort((x, y) => (y.beforeCnt - x.beforeCnt) || x.orgnr.localeCompare(y.orgnr));
 
-  return { d1, d2, started, stopped };
+  return { started, stopped };
 }
+
 
 function extractOwnerOrgnrFromRowJson(rowJsonText) {
   const d = parseJsonSafe(rowJsonText);
@@ -673,12 +686,16 @@ function renderChanges() {
     sel.innerHTML = "";
     startedBody.innerHTML = "";
     stoppedBody.innerHTML = "";
+    startedEmpty.textContent = "";
+    stoppedEmpty.textContent = "";
     return;
   }
 
   // Fyll dropdown én gang (hvis tom)
   if (!sel.options.length) {
-    sel.innerHTML = dates.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join("");
+    sel.innerHTML = dates
+      .map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`)
+      .join("");
     sel.value = dates[0]; // nyeste
   }
 
@@ -690,9 +707,82 @@ function renderChanges() {
     ? `Viser endringer fra ${formatNorwegianDate(d1)} → ${formatNorwegianDate(d2)}`
     : `Viser ${formatNorwegianDate(d2)} (ingen tidligere dato funnet)`;
 
+  // Forutsetter at computeGrunnrenteChanges(d1,d2) returnerer r.permitsBefore / r.permitsAfter / r.added / r.removed
   const { started, stopped } = computeGrunnrenteChanges(d1, d2);
 
-  // render started
+  function permitsListHtml(title, permits, pillClass = "pill--yellow") {
+    const list = permits || [];
+    if (!list.length) {
+      return `<div class="muted-small">${escapeHtml(title)}: —</div>`;
+    }
+    return `
+      <div>
+        <div class="muted-small" style="margin-bottom:6px">${escapeHtml(title)} (${list.length})</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${list.map(p => `<a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(p))}"><span class="pill ${pillClass}">${escapeHtml(p)}</span></a>`).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderChangeDetailsBox(r) {
+    const added = r.added || [];
+    const removed = r.removed || [];
+
+    return `
+      <div class="details-box">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          ${permitsListHtml("Før", r.permitsBefore, "pill--yellow")}
+          ${permitsListHtml("Etter", r.permitsAfter, "pill--yellow")}
+        </div>
+
+        <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div>
+            <div class="muted-small" style="margin-bottom:6px">Lagt til (${added.length})</div>
+            ${added.length
+              ? `<div style="display:flex;flex-wrap:wrap;gap:6px">
+                   ${added.map(p => `<a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(p))}"><span class="pill pill--blue">${escapeHtml(p)}</span></a>`).join("")}
+                 </div>`
+              : `<div class="muted-small">—</div>`
+            }
+          </div>
+
+          <div>
+            <div class="muted-small" style="margin-bottom:6px">Fjernet (${removed.length})</div>
+            ${removed.length
+              ? `<div style="display:flex;flex-wrap:wrap;gap:6px">
+                   ${removed.map(p => `<a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(p))}"><span class="pill pill--red">${escapeHtml(p)}</span></a>`).join("")}
+                 </div>`
+              : `<div class="muted-small">—</div>`
+            }
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function wireChangesExpanders(tbodyEl) {
+    tbodyEl.onclick = (e) => {
+      const btn = e.target.closest(".expander-btn");
+      if (!btn) return;
+
+      const row = e.target.closest("tr");
+      if (!row) return;
+
+      const orgnr = row.dataset.orgnr;
+      if (!orgnr) return;
+
+      const detailsRow = tbodyEl.querySelector(`tr.details-row[data-details-for="${orgnr}"]`);
+      if (!detailsRow) return;
+
+      const isOpen = !detailsRow.classList.contains("hidden");
+      detailsRow.classList.toggle("hidden", isOpen);
+      row.classList.toggle("is-open", !isOpen);
+      btn.setAttribute("aria-expanded", String(!isOpen));
+    };
+  }
+
+  // --- render started (med expander) ---
   startedBody.innerHTML = "";
   if (started.length === 0) {
     startedEmpty.textContent = "Ingen nye innehavere startet grunnrenteplikt i denne perioden.";
@@ -700,17 +790,33 @@ function renderChanges() {
     startedEmpty.textContent = "";
     for (const r of started) {
       const tr = document.createElement("tr");
+      tr.dataset.orgnr = String(r.orgnr);
+
       tr.innerHTML = `
+        <td>
+          <button class="expander-btn" type="button" aria-label="Vis detaljer" aria-expanded="false">
+            <span class="chev">▶</span>
+          </button>
+        </td>
         <td>${escapeHtml(r.name || "—")}</td>
         <td><a class="link" href="#/owner/${encodeURIComponent(r.orgnr)}">${escapeHtml(r.orgnr)}</a></td>
-        <td>${escapeHtml(`${r.beforeCnt} &rarr; ${r.afterCnt}`)}</td>
+        <td>${escapeHtml(`${r.beforeCnt} → ${r.afterCnt}`)}</td>
       `;
-
       startedBody.appendChild(tr);
+
+      const detailsTr = document.createElement("tr");
+      detailsTr.className = "details-row hidden";
+      detailsTr.dataset.detailsFor = String(r.orgnr);
+      detailsTr.innerHTML = `
+        <td colspan="4">
+          ${renderChangeDetailsBox(r)}
+        </td>
+      `;
+      startedBody.appendChild(detailsTr);
     }
   }
 
-  // render stopped
+  // --- render stopped (med expander) ---
   stoppedBody.innerHTML = "";
   if (stopped.length === 0) {
     stoppedEmpty.textContent = "Ingen innehavere sluttet å være grunnrentepliktige i denne perioden.";
@@ -718,16 +824,37 @@ function renderChanges() {
     stoppedEmpty.textContent = "";
     for (const r of stopped) {
       const tr = document.createElement("tr");
+      tr.dataset.orgnr = String(r.orgnr);
+
       tr.innerHTML = `
+        <td>
+          <button class="expander-btn" type="button" aria-label="Vis detaljer" aria-expanded="false">
+            <span class="chev">▶</span>
+          </button>
+        </td>
         <td>${escapeHtml(r.name || "—")}</td>
         <td><a class="link" href="#/owner/${encodeURIComponent(r.orgnr)}">${escapeHtml(r.orgnr)}</a></td>
-        <td>${escapeHtml(`${r.beforeCnt} $ &rarr; {r.afterCnt}`)}</td>
+        <td>${escapeHtml(`${r.beforeCnt} → ${r.afterCnt}`)}</td>
       `;
-
       stoppedBody.appendChild(tr);
+
+      const detailsTr = document.createElement("tr");
+      detailsTr.className = "details-row hidden";
+      detailsTr.dataset.detailsFor = String(r.orgnr);
+      detailsTr.innerHTML = `
+        <td colspan="4">
+          ${renderChangeDetailsBox(r)}
+        </td>
+      `;
+      stoppedBody.appendChild(detailsTr);
     }
   }
+
+  // Delegert klikk for expanders (én per tabell)
+  wireChangesExpanders(startedBody);
+  wireChangesExpanders(stoppedBody);
 }
+
 
 // -------------------------------
 // NYTT: pill-regler (aktive)
