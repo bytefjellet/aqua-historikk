@@ -2,12 +2,13 @@
 
 let SQL = null;
 let db = null;
+
+// --- Produksjonsområder (indekser bygges én gang per DB-load) ---
 let areaIndexBuilt = false;
-let areaOwnersIndex = new Map(); // code -> Map(key -> { owner_name, owner_identity, count })
+let areaOwnersIndex = new Map(); // code -> Map(key -> { owner_name, owner_identity, nonGrsCount, grsCount, capTN })
 let areaPermitCountGrs = new Map();      // code -> antall grunnrentepliktige
 let areaPermitCountNonGrs = new Map();   // code -> antall ikke-grunnrentepliktige
 let areaCapacityTN = new Map();          // code -> sum kapasitet (TN)
-
 
 const DB_URL = "data/aqua.sqlite";
 
@@ -30,7 +31,7 @@ const ownerFilters = {
 // Liste over alle formål i DB (fra permit_current.row_json)
 let allFormals = [];
 
-// --- helpers ---
+// -------------------- helpers --------------------
 function $(id) { return document.getElementById(id); }
 
 function safeEl(id) {
@@ -68,18 +69,6 @@ function setActiveTab(tabId) {
   }
 }
 
-function pickCol(table, candidates) {
-  for (const c of candidates) {
-    if (hasColumn(table, c)) return c;
-  }
-  return null;
-}
-
-function normPermitForSql(s) {
-  return String(s ?? "").trim().toUpperCase();
-}
-
-
 function showView(viewId) {
   for (const id of ["view-now", "view-permit", "view-owner", "view-history", "view-areas", "view-changes"]) {
     const el = $(id);
@@ -87,8 +76,6 @@ function showView(viewId) {
     el.style.display = (id === viewId) ? "block" : "none";
   }
 }
-
-
 
 function execAll(sql, params = []) {
   const stmt = db.prepare(sql);
@@ -104,97 +91,6 @@ function one(sql, params = []) {
   return rows.length ? rows[0] : null;
 }
 
-function normTrafficStatus(s) {
-  const t = String(s ?? "").trim().toUpperCase();
-  if (!t) return null;
-  if (t.startsWith("GRØNN") || t.startsWith("GRONN") || t === "GREEN") return "GREEN";
-  if (t.startsWith("GUL") || t === "YELLOW") return "YELLOW";
-  if (t.startsWith("RØD") || t.startsWith("ROD") || t === "RED") return "RED";
-  return null;
-}
-
-function trafficClass(statusNorm) {
-  if (statusNorm === "GREEN") return "traffic--green";
-  if (statusNorm === "YELLOW") return "traffic--yellow";
-  if (statusNorm === "RED") return "traffic--red";
-  return "traffic--unknown";
-}
-
-// Henter siste status + navn for et produksjonsområde (1-13)
-// Tilpasset ditt schema: production_area_status(snapshot_date, prod_area_code, prod_area_status, ...)
-function getProductionAreaInfo(prodAreaRaw) {
-  const code = parseProdAreaCode(prodAreaRaw);
-  if (!code) {
-    return { code: String(prodAreaRaw ?? "").trim(), name: "", status: null };
-  }
-
-  const row = one(`
-    SELECT prod_area_status
-    FROM production_area_status
-    WHERE prod_area_code = ?
-    ORDER BY date(snapshot_date) DESC
-    LIMIT 1;
-  `, [code]);
-
-  return {
-    code,
-    name: PRODUCTION_AREA_NAMES[code] || "",
-    status: normTrafficStatus(row?.prod_area_status)
-  };
-}
-
-function getTransferEventsForPermit(permitKey) {
-  const key = String(permitKey ?? "").trim().toUpperCase();
-
-  // Velg dato-kolonne: journal_date hvis finnes, ellers updated_at, ellers fetched_at
-  const dateCol =
-    hasColumn("license_transfers", "journal_date") ? "journal_date" :
-    hasColumn("license_transfers", "updated_at") ? "updated_at" :
-    hasColumn("license_transfers", "fetched_at") ? "fetched_at" :
-    null;
-
-  const rows = execAll(`
-    SELECT
-      ${dateCol ? `${dateCol} AS event_date` : `NULL AS event_date`},
-      current_owner_name  AS to_name,
-      current_owner_orgnr AS to_ident
-    FROM license_transfers
-    WHERE UPPER(TRIM(permit_key)) = UPPER(TRIM(?))
-    ORDER BY
-      ${dateCol ? `date(${dateCol}) ASC, id ASC` : `id ASC`};
-  `, [key]);
-
-  return rows.map(r => ({
-    event_date: iso10(r.event_date) || "",
-    to_name: String(r.to_name ?? "").trim(),
-    to_ident: String(r.to_ident ?? "").trim(),
-  }));
-}
-
-
-function getOriginalOwnerForPermit(permitKey) {
-  const key = String(permitKey ?? "").trim().toUpperCase();
-
-  const row = one(`
-    SELECT
-      original_owner_name  AS name,
-      original_owner_orgnr AS ident
-    FROM license_original_owner
-    WHERE UPPER(TRIM(permit_key)) = UPPER(TRIM(?))
-    LIMIT 1;
-  `, [key]);
-
-  if (!row) return null;
-
-  return {
-    name: String(row.name ?? "").trim(),
-    ident: String(row.ident ?? "").trim()
-  };
-}
-
-
-
-
 function hasColumn(table, col) {
   const rows = execAll(`PRAGMA table_info(${table});`);
   return rows.some(r => String(r.name) === col);
@@ -203,100 +99,18 @@ function hasColumn(table, col) {
 function parseJsonSafe(s) {
   try { return s ? JSON.parse(s) : {}; } catch { return {}; }
 }
-function getProdOmrFromRowJson(rowJsonText) {
-  const d = parseJsonSafe(rowJsonText);
-  return d["PROD_OMR"];
-}
-
-function parseProdAreaCode(raw) {
-  const s = String(raw ?? "").trim();
-  if (!s) return null;
-
-  // finn første tallsekvens ("7", "PO7", "7 - ...", osv.)
-  const m = s.match(/\d+/);
-  if (!m) return null;
-
-  const n = Number(m[0]);
-  if (!Number.isFinite(n) || n < 1 || n > 13) return null;
-  return n;
-}
-
-function buildAreaIndexOnce() {
-  if (areaIndexBuilt) return;
-
-  areaOwnersIndex = new Map();
-  areaPermitCount = new Map();
-  areaPermitCountGrs = new Map();
-  areaPermitCountNonGrs = new Map();
-  areaCapacityTN = new Map();
-
-  const rows = execAll(`
-  SELECT owner_name, owner_identity, row_json, grunnrente_pliktig
-  FROM permit_current;
-`);
-
-  for (const r of rows) {
-    const areaRaw = getProdOmrFromRowJson(r.row_json);
-    const code = parseProdAreaCode(areaRaw);
-    if (!code) continue;
-
-    const cap = extractCapacityTN(r.row_json); // TN eller 0
-    areaCapacityTN.set(code, (areaCapacityTN.get(code) || 0) + cap);
-
-
-    const ident = String(r.owner_identity ?? "").trim().replace(/\s+/g, "");
-    const name  = String(r.owner_name ?? "").trim();
-
-    // total antall tillatelser i området
-    areaPermitCount.set(code, (areaPermitCount.get(code) || 0) + 1);
-
-    // split: grunnrentepliktig vs ikke
-    const isGrs = Number(r.grunnrente_pliktig) === 1;
-    if (isGrs) {
-      areaPermitCountGrs.set(code, (areaPermitCountGrs.get(code) || 0) + 1);
-    } else {
-      areaPermitCountNonGrs.set(code, (areaPermitCountNonGrs.get(code) || 0) + 1);
-    }
-
-    // per selskap i området
-    if (!areaOwnersIndex.has(code)) areaOwnersIndex.set(code, new Map());
-    const m = areaOwnersIndex.get(code);
-
-    // nøkkel: orgnr hvis finnes, ellers navn
-    const key = ident || name || "(ukjent)";
-    const prev = m.get(key) || { owner_name: name, owner_identity: ident, count: 0 };
-    prev.count += 1;
-
-    // behold beste verdier
-    if (!prev.owner_name && name) prev.owner_name = name;
-    if (!prev.owner_identity && ident) prev.owner_identity = ident;
-
-    m.set(key, prev);
-  }
-
-  areaIndexBuilt = true;
-}
 
 function iso10(s) {
   if (!s) return null;
   const t = String(s).trim();
   if (!t) return null;
-
-  // Kun datoer på format YYYY-MM-DD (evt med tid etterpå)
   if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
-
-  return t; // <- ikke kutt vanlige tekster som "Opprinnelig"
+  return t;
 }
-
 
 function displayDate(s) {
   if (s == null) return "";
   return iso10(s) || String(s);
-}
-
-function pillHtml(text, kind) {
-  const cls = kind === "blue" ? "pill--blue" : "pill--yellow";
-  return `<span class="pill ${cls}">${escapeHtml(text)}</span>`;
 }
 
 function formatNorwegianDate(isoDate) {
@@ -340,42 +154,257 @@ function formatKapNoTrailing00(kapRaw) {
   const normalized = t.replace(",", ".");
   const num = Number(normalized);
   if (!Number.isFinite(num)) return t;
-
   if (Math.abs(num - Math.round(num)) < 1e-9) return String(Math.round(num));
-
   const s = String(num);
   return s.replace(".", ",");
 }
 
 function extractCapacityTN(rowJsonText) {
   const d = parseJsonSafe(rowJsonText);
-
   const kapRaw = String(d["TILL_KAP"] ?? "").trim();
   const enh = String(d["TILL_ENHET"] ?? "").trim().toUpperCase();
-
   if (!kapRaw || enh !== "TN") return 0;
-
-  // normaliser tall (komma → punkt)
   const num = Number(kapRaw.replace(",", "."));
   return Number.isFinite(num) ? num : 0;
 }
-function isOwnerAtDate(ownerOrgnr, permitKey, isoDate) {
-  // isoDate: "YYYY-MM-DD"
-  const row = one(`
-    SELECT 1 AS ok
-    FROM ownership_history
-    WHERE
-      UPPER(REPLACE(REPLACE(TRIM(permit_key), ' ', ''), '-', '')) =
-      UPPER(REPLACE(REPLACE(TRIM(?),         ' ', ''), '-', ''))
-      AND REPLACE(TRIM(owner_identity), ' ', '') = ?
-      AND date(valid_from) <= date(?)
-      AND (
-        valid_to IS NULL OR TRIM(valid_to) = '' OR date(valid_to) >= date(?)
-      )
-    LIMIT 1;
-  `, [permitKey, ownerOrgnr, isoDate, isoDate]);
 
-  return !!row;
+function getProdOmrFromRowJson(rowJsonText) {
+  const d = parseJsonSafe(rowJsonText);
+  return d["PROD_OMR"];
+}
+
+function parseProdAreaCode(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  const m = s.match(/\d+/);
+  if (!m) return null;
+  const n = Number(m[0]);
+  if (!Number.isFinite(n) || n < 1 || n > 13) return null;
+  return n;
+}
+
+function scrollToTop() {
+  window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+}
+
+// -------------------------------
+// NYTT: pill-regler (aktive)
+// -------------------------------
+function normUpper(s) {
+  return (s ?? "").toString().trim().toUpperCase();
+}
+
+function normStage(s) {
+  return (s ?? "")
+    .toString()
+    .toUpperCase()
+    .replace(/[–—]/g, "-")
+    .replace(/\s*-\s*/g, " - ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function toArray(val) {
+  if (val == null) return [];
+  if (Array.isArray(val)) return val;
+  return val
+    .toString()
+    .split(/[;,/]/)
+    .map(x => x.trim())
+    .filter(Boolean);
+}
+
+// Art: blå hvis Laks/Regnbuørret/Ørret inngår
+const BLUE_ART = new Set(["LAKS", "REGNBUØRRET", "ØRRET"]);
+function isBlueArt(artValue) {
+  const arts = toArray(artValue).map(normUpper);
+  return arts.some(a => BLUE_ART.has(a));
+}
+
+// Formål: blå hvis KOMMERSIELL
+function isBlueFormal(formalValue) {
+  return normUpper(formalValue) === "KOMMERSIELL";
+}
+
+// Produksjonsstadium: blå hvis i whitelist
+const BLUE_STAGE = new Set([
+  "MATFISK",
+  "MATFISK - (5% MTB ØKNING)",
+  "MATFISK - GRØNN A",
+  "MATFISK - GRØNN A(5% MTB ØKNING)",
+  "MATFISK - GRØNN B",
+  "MATFISK - GRØNN C",
+  "MATFISK - GRØNN KONVERTERT",
+  "ØKOLOGISK MATFISK",
+].map(normUpper));
+
+function isBlueProduksjonsstadium(stageValue) {
+  return BLUE_STAGE.has(normStage(stageValue));
+}
+
+function pillSpanByRule(text, isBlue) {
+  if (!String(text ?? "").trim()) return "";
+  return `<span class="pill ${isBlue ? "pill--blue" : "pill--yellow"}">${escapeHtml(String(text).trim())}</span>`;
+}
+
+// -------------------------------
+// PRODUKSJONSOMRÅDER – trafikklys
+// -------------------------------
+const PRODUCTION_AREA_NAMES = {
+  1: "Svenskegrensen – Jæren",
+  2: "Ryfylke",
+  3: "Karmøy – Sotra",
+  4: "Nordhordland – Stadt",
+  5: "Stadt – Hustadvika",
+  6: "Nordmøre – Sør-Trøndelag",
+  7: "Nord-Trøndelag med Bindal",
+  8: "Helgeland – Bodø",
+  9: "Vestfjorden og Vesterålen",
+  10: "Andøya – Senja",
+  11: "Kvaløya – Loppa",
+  12: "Vest-Finnmark",
+  13: "Øst-Finnmark"
+};
+
+function normTrafficStatus(s) {
+  const t = String(s ?? "").trim().toUpperCase();
+  if (!t) return null;
+  if (t.startsWith("GRØNN") || t.startsWith("GRONN") || t === "GREEN") return "GREEN";
+  if (t.startsWith("GUL") || t === "YELLOW") return "YELLOW";
+  if (t.startsWith("RØD") || t.startsWith("ROD") || t === "RED") return "RED";
+  return null;
+}
+
+function trafficHtml(code, statusNorm) {
+  const cls =
+    statusNorm === "GREEN"  ? "traffic--green"  :
+    statusNorm === "YELLOW" ? "traffic--yellow" :
+    statusNorm === "RED"    ? "traffic--red"    :
+                              "traffic--unknown";
+
+  const label =
+    statusNorm === "GREEN"  ? "Grønn"  :
+    statusNorm === "YELLOW" ? "Gul"    :
+    statusNorm === "RED"    ? "Rød"    :
+                              "Ukjent";
+
+  return `
+    <span class="traffic ${cls}" title="Status: ${label}">
+      <span class="traffic-dot" aria-hidden="true"></span>
+      <span class="traffic-num">${escapeHtml(code)}</span>
+    </span>
+  `;
+}
+
+// Henter siste status + navn for et produksjonsområde (1-13)
+function getProductionAreaInfo(prodAreaRaw) {
+  const code = parseProdAreaCode(prodAreaRaw);
+  if (!code) {
+    return { code: String(prodAreaRaw ?? "").trim(), name: "", status: null };
+  }
+
+  const row = one(`
+    SELECT prod_area_status
+    FROM production_area_status
+    WHERE prod_area_code = ?
+    ORDER BY date(snapshot_date) DESC
+    LIMIT 1;
+  `, [code]);
+
+  return {
+    code,
+    name: PRODUCTION_AREA_NAMES[code] || "",
+    status: normTrafficStatus(row?.prod_area_status)
+  };
+}
+
+// -------------------------------
+// Owner / transfers helpers
+// -------------------------------
+function getTransferEventsForPermit(permitKey) {
+  const key = String(permitKey ?? "").trim().toUpperCase();
+
+  const dateCol =
+    hasColumn("license_transfers", "journal_date") ? "journal_date" :
+    hasColumn("license_transfers", "updated_at") ? "updated_at" :
+    hasColumn("license_transfers", "fetched_at") ? "fetched_at" :
+    null;
+
+  const rows = execAll(`
+    SELECT
+      ${dateCol ? `${dateCol} AS event_date` : `NULL AS event_date`},
+      current_owner_name  AS to_name,
+      current_owner_orgnr AS to_ident
+    FROM license_transfers
+    WHERE UPPER(TRIM(permit_key)) = UPPER(TRIM(?))
+    ORDER BY
+      ${dateCol ? `date(${dateCol}) ASC, id ASC` : `id ASC`};
+  `, [key]);
+
+  return rows.map(r => ({
+    event_date: iso10(r.event_date) || "",
+    to_name: String(r.to_name ?? "").trim(),
+    to_ident: String(r.to_ident ?? "").trim(),
+  }));
+}
+
+function getOriginalOwnerForPermit(permitKey) {
+  const key = String(permitKey ?? "").trim().toUpperCase();
+
+  const row = one(`
+    SELECT
+      original_owner_name  AS name,
+      original_owner_orgnr AS ident
+    FROM license_original_owner
+    WHERE UPPER(TRIM(permit_key)) = UPPER(TRIM(?))
+    LIMIT 1;
+  `, [key]);
+
+  if (!row) return null;
+
+  return {
+    name: String(row.name ?? "").trim(),
+    ident: String(row.ident ?? "").trim()
+  };
+}
+
+// ÉN robust extractOwner*-implementasjon (brukes både i changes + annet)
+function extractOwnerOrgnrFromRowJson(rowJsonText) {
+  const d = parseJsonSafe(rowJsonText);
+  const candidates = [
+    d["OK_ORGNR"],
+    d["ORGNR"],
+    d["ORG_NR"],
+    d["ORGANISASJONSNUMMER"],
+    d["INNEHAVER_ORGNR"],
+    d["INNEHAVER_ORGNR."],
+    d["INNEHAVER_ORGANISASJONSNUMMER"],
+    d["EIER_ORGNR"],
+    d["OWNER_ORGNR"],
+    d["OWNER_IDENTITY"],
+  ];
+  for (const v of candidates) {
+    const s = String(v ?? "").trim().replace(/\s+/g, "");
+    if (/^[0-9]{9}$/.test(s)) return s;
+  }
+  return "";
+}
+
+function extractOwnerNameFromRowJson(rowJsonText) {
+  const d = parseJsonSafe(rowJsonText);
+  const candidates = [
+    d["OK_NAVN"],
+    d["INNEHAVER_NAVN"],
+    d["INNEHAVER"],
+    d["EIER_NAVN"],
+    d["OWNER_NAME"],
+    d["NAVN"],
+  ];
+  for (const v of candidates) {
+    const s = String(v ?? "").trim();
+    if (s) return s;
+  }
+  return "";
 }
 
 function getOwnerStartDateForPermit(ownerOrgnr, permitKey) {
@@ -389,7 +418,7 @@ function getOwnerStartDateForPermit(ownerOrgnr, permitKey) {
     return "0000-01-01";
   }
 
-  // Første gang denne eieren dukker opp som "current_owner" i transfers
+  // Første transfer der current_owner_orgnr == owner
   const row = one(`
     SELECT journal_date AS d
     FROM license_transfers
@@ -409,7 +438,6 @@ function getGrunnrenteYearsForOwner(ownerOrgnr, fromYear = 2023) {
 
   const nowYear = new Date().getFullYear();
 
-  // Tillatelser som er grunnrentepliktige nå (definisjonen din)
   const permits = execAll(`
     SELECT permit_key
     FROM permit_current
@@ -438,624 +466,9 @@ function getGrunnrenteYearsForOwner(ownerOrgnr, fromYear = 2023) {
   return years;
 }
 
-
-function getOwnerStartDateForPermit(ownerOrgnr, permitKey) {
-  const owner = String(ownerOrgnr ?? "").trim();
-  const key = String(permitKey ?? "").trim().toUpperCase();
-  if (!owner || !key) return null;
-
-  // 1) Hvis eier er opprinnelig innehaver -> start "ukjent tidlig"
-  const orig = getOriginalOwnerForPermit(key);
-  if (orig && String(orig.ident || "").trim() === owner) {
-    return "0000-01-01";
-  }
-
-  // 2) Finn første transfer der current_owner_orgnr == owner
-  const row = one(`
-    SELECT journal_date AS d
-    FROM license_transfers
-    WHERE UPPER(TRIM(permit_key)) = UPPER(TRIM(?))
-      AND TRIM(current_owner_orgnr) = TRIM(?)
-    ORDER BY date(journal_date) ASC, id ASC
-    LIMIT 1;
-  `, [key, owner]);
-
-  const d = iso10(row?.d);
-  return d || null;
-}
-function scrollToTop() {
-  window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-}
-
-function extractOwnerOrgnrFromRowJson(rowJsonText) {
-  const d = parseJsonSafe(rowJsonText);
-
-  // Prøv typiske nøkler (du kan justere etter ditt datasett)
-  const candidates = [
-    d["ORGNR"],
-    d["ORG_NR"],
-    d["ORGANISASJONSNUMMER"],
-    d["INNEHAVER_ORGNR"],
-    d["INNEHAVER_ORGNR."],
-    d["INNEHAVER_ORGANISASJONSNUMMER"],
-    d["EIER_ORGNR"],
-    d["OWNER_ORGNR"],
-    d["OWNER_IDENTITY"],
-  ];
-
-  for (const v of candidates) {
-    const s = String(v ?? "").trim().replace(/\s+/g, "");
-    if (/^[0-9]{9}$/.test(s)) return s;
-  }
-  return "";
-}
-
-function extractOwnerNameFromRowJson(rowJsonText) {
-  const d = parseJsonSafe(rowJsonText);
-
-  const candidates = [
-    d["INNEHAVER_NAVN"],
-    d["INNEHAVER"],
-    d["EIER_NAVN"],
-    d["OWNER_NAME"],
-    d["NAVN"],
-  ];
-
-  for (const v of candidates) {
-    const s = String(v ?? "").trim();
-    if (s) return s;
-  }
-  return "";
-}
-
-function getLatestAndPreviousSnapshotDates() {
-  const rows = execAll(`
-    SELECT snapshot_date
-    FROM snapshots
-    WHERE snapshot_date IS NOT NULL AND TRIM(snapshot_date) <> ''
-    ORDER BY date(snapshot_date) DESC;
-  `);
-
-  const d2 = rows[0]?.snapshot_date ? iso10(rows[0].snapshot_date) : null;
-  const d1 = rows[1]?.snapshot_date ? iso10(rows[1].snapshot_date) : null;
-
-  return { d1, d2 };
-}
-
-function buildGrunnrenteOwnerCountsForDate(snapshotDateIso10) {
-  const d = iso10(snapshotDateIso10);
-  if (!d) return new Map();
-
-  // Hent bare grunnrentepliktige rader for datoen (minimer data)
-  const rows = execAll(`
-    SELECT permit_key, row_json
-    FROM permit_snapshot
-    WHERE date(snapshot_date) = date(?)
-      AND grunnrente_pliktig = 1;
-  `, [d]);
-
-  // Map orgnr -> { orgnr, name, count, permits[] }
-  const m = new Map();
-
-  for (const r of rows) {
-    const orgnr = extractOwnerOrgnrFromRowJson(r.row_json);
-    if (!orgnr) continue;
-
-    const name = extractOwnerNameFromRowJson(r.row_json);
-    const permit = String(r.permit_key ?? "").trim();
-
-    if (!m.has(orgnr)) {
-      m.set(orgnr, { orgnr, name: name || "", count: 0, permits: [] });
-    }
-    const obj = m.get(orgnr);
-    obj.count += 1;
-    if (permit) obj.permits.push(permit);
-
-    // behold første ikke-tomme navn vi finner
-    if (!obj.name && name) obj.name = name;
-  }
-
-  return m;
-}
-
-function uniqSorted(arr) {
-  return Array.from(new Set((arr || []).map(x => String(x || "").trim()).filter(Boolean)))
-    .sort((a, b) => a.localeCompare(b, "nb", { numeric: true, sensitivity: "base" }));
-}
-
-function computeGrunnrenteChanges(d1, d2) {
-  const before = d1 ? buildGrunnrenteOwnerCountsForDate(d1) : new Map();
-  const after  = d2 ? buildGrunnrenteOwnerCountsForDate(d2) : new Map();
-
-  const all = new Set([...before.keys(), ...after.keys()]);
-  const started = [];
-  const stopped = [];
-
-  for (const orgnr of all) {
-    const a = before.get(orgnr);
-    const b = after.get(orgnr);
-
-    const beforeCnt = a ? a.count : 0;
-    const afterCnt  = b ? b.count : 0;
-
-    const permitsBefore = uniqSorted(a?.permits || []);
-    const permitsAfter  = uniqSorted(b?.permits || []);
-
-    const added = permitsAfter.filter(p => !new Set(permitsBefore).has(p));
-    const removed = permitsBefore.filter(p => !new Set(permitsAfter).has(p));
-
-    if (beforeCnt === 0 && afterCnt > 0) {
-      started.push({
-        orgnr,
-        name: b?.name || a?.name || "",
-        beforeCnt,
-        afterCnt,
-        permitsBefore,
-        permitsAfter,
-        added,
-        removed,
-      });
-    } else if (beforeCnt > 0 && afterCnt === 0) {
-      stopped.push({
-        orgnr,
-        name: a?.name || b?.name || "",
-        beforeCnt,
-        afterCnt,
-        permitsBefore,
-        permitsAfter,
-        added,
-        removed,
-      });
-    }
-  }
-
-  started.sort((x, y) => (y.afterCnt - x.afterCnt) || x.orgnr.localeCompare(y.orgnr));
-  stopped.sort((x, y) => (y.beforeCnt - x.beforeCnt) || x.orgnr.localeCompare(y.orgnr));
-
-  return { started, stopped };
-}
-
-
-function extractOwnerOrgnrFromRowJson(rowJsonText) {
-  const d = parseJsonSafe(rowJsonText);
-  const s = String(d["OK_ORGNR"] ?? "").trim().replace(/\s+/g, "");
-  return /^[0-9]{9}$/.test(s) ? s : "";
-}
-
-function extractOwnerNameFromRowJson(rowJsonText) {
-  const d = parseJsonSafe(rowJsonText);
-  return String(d["OK_NAVN"] ?? "").trim();
-}
-
-function listSnapshotDatesDesc() {
-  const rows = execAll(`
-    SELECT snapshot_date
-    FROM snapshots
-    WHERE snapshot_date IS NOT NULL AND TRIM(snapshot_date) <> ''
-    ORDER BY date(snapshot_date) DESC;
-  `);
-  return rows.map(r => iso10(r.snapshot_date)).filter(Boolean);
-}
-
-
-function renderChanges() {
-  setActiveTab("tab-changes");
-  showView("view-changes");
-
-  const sel = safeEl("changesYear");
-  const meta = safeEl("changesMeta");
-  const startedBody = safeEl("changesStartedTable").querySelector("tbody");
-  const stoppedBody = safeEl("changesStoppedTable").querySelector("tbody");
-  const startedEmpty = safeEl("changesStartedEmpty");
-  const stoppedEmpty = safeEl("changesStoppedEmpty");
-
-  const years = listSnapshotYearsDesc(2026);
-  if (years.length === 0) {
-    meta.textContent = "Ingen snapshot-år funnet (fra og med 2026).";
-    sel.innerHTML = "";
-    startedBody.innerHTML = "";
-    stoppedBody.innerHTML = "";
-    startedEmpty.textContent = "";
-    stoppedEmpty.textContent = "";
-    return;
-  }
-
-  // Fyll dropdown én gang
-  if (!sel.options.length) {
-    sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join("");
-    sel.value = String(years[0]); // nyeste år
-  }
-
-  const year = Number(sel.value) || years[0];
-
-  const { started, stopped, dates } = computeGrunnrenteYearEvents(year);
-
-  meta.textContent =
-    `Viser alle endringer i grunnrenteplikt i ${year}. ` +
-    `(Starter: ${started.length}, Slutter: ${stopped.length}, snapshot-dager i året: ${dates.length})`;
-
-  function permitChipsHtml(permits, pillClass) {
-    const list = permits || [];
-    if (!list.length) return `<div class="muted-small">—</div>`;
-    return `
-      <div style="display:flex;flex-wrap:wrap;gap:6px">
-        ${list.map(p =>
-          `<a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(p))}">
-            <span class="pill ${pillClass}">${escapeHtml(p)}</span>
-          </a>`
-        ).join("")}
-      </div>
-    `;
-  }
-
-  function renderChangeDetailsBox(r, mode /* started|stopped */) {
-    const dateLine = r.eventDate ? `<div class="muted-small" style="margin-bottom:8px">Dato: ${escapeHtml(formatNorwegianDate(r.eventDate))}</div>` : "";
-
-    if (mode === "started") {
-      const added = r.added || [];
-      return `
-        <div class="details-box">
-          ${dateLine}
-          <div class="muted-small" style="margin-bottom:6px">Har blitt innehaver av (${added.length}):</div>
-          ${permitChipsHtml(added, "pill--blue")}
-        </div>
-      `;
-    } else {
-      const removed = r.removed || [];
-      return `
-        <div class="details-box">
-          ${dateLine}
-          <div class="muted-small" style="margin-bottom:6px">Ikke lenger innehaver av (${removed.length}):</div>
-          ${permitChipsHtml(removed, "pill--red")}
-        </div>
-      `;
-    }
-  }
-
-  function wireChangesExpanders(tbodyEl) {
-    tbodyEl.onclick = (e) => {
-      const btn = e.target.closest(".expander-btn");
-      if (!btn) return;
-
-      const row = e.target.closest("tr");
-      if (!row) return;
-
-      const key = row.dataset.key;
-      if (!key) return;
-
-      const detailsRow = tbodyEl.querySelector(`tr.details-row[data-details-for="${key}"]`);
-      if (!detailsRow) return;
-
-      const isOpen = !detailsRow.classList.contains("hidden");
-      detailsRow.classList.toggle("hidden", isOpen);
-      row.classList.toggle("is-open", !isOpen);
-      btn.setAttribute("aria-expanded", String(!isOpen));
-    };
-  }
-
-  // --- render started ---
-  startedBody.innerHTML = "";
-  if (started.length === 0) {
-    startedEmpty.textContent = `Ingen innehavere startet grunnrenteplikt i ${year}.`;
-  } else {
-    startedEmpty.textContent = "";
-    for (const r of started) {
-      const key = `${r.orgnr}__${r.eventDate}`;
-      const tr = document.createElement("tr");
-      tr.dataset.key = key;
-
-      tr.innerHTML = `
-        <td>
-          <button class="expander-btn" type="button" aria-label="Vis detaljer" aria-expanded="false">
-            <span class="chev">▶</span>
-          </button>
-        </td>
-        <td>${escapeHtml(r.name || "—")}</td>
-        <td><a class="link" href="#/owner/${encodeURIComponent(r.orgnr)}">${escapeHtml(r.orgnr)}</a></td>
-        <td>${escapeHtml(`${r.beforeCnt} → ${r.afterCnt}`)}</td>
-      `;
-      startedBody.appendChild(tr);
-
-      const detailsTr = document.createElement("tr");
-      detailsTr.className = "details-row hidden";
-      detailsTr.dataset.detailsFor = key;
-      detailsTr.innerHTML = `<td colspan="4">${renderChangeDetailsBox(r, "started")}</td>`;
-      startedBody.appendChild(detailsTr);
-    }
-  }
-
-  // --- render stopped ---
-  stoppedBody.innerHTML = "";
-  if (stopped.length === 0) {
-    stoppedEmpty.textContent = `Ingen innehavere sluttet grunnrenteplikt i ${year}.`;
-  } else {
-    stoppedEmpty.textContent = "";
-    for (const r of stopped) {
-      const key = `${r.orgnr}__${r.eventDate}`;
-      const tr = document.createElement("tr");
-      tr.dataset.key = key;
-
-      tr.innerHTML = `
-        <td>
-          <button class="expander-btn" type="button" aria-label="Vis detaljer" aria-expanded="false">
-            <span class="chev">▶</span>
-          </button>
-        </td>
-        <td>${escapeHtml(r.name || "—")}</td>
-        <td><a class="link" href="#/owner/${encodeURIComponent(r.orgnr)}">${escapeHtml(r.orgnr)}</a></td>
-        <td>${escapeHtml(`${r.beforeCnt} → ${r.afterCnt}`)}</td>
-      `;
-      stoppedBody.appendChild(tr);
-
-      const detailsTr = document.createElement("tr");
-      detailsTr.className = "details-row hidden";
-      detailsTr.dataset.detailsFor = key;
-      detailsTr.innerHTML = `<td colspan="4">${renderChangeDetailsBox(r, "stopped")}</td>`;
-      stoppedBody.appendChild(detailsTr);
-    }
-  }
-
-  wireChangesExpanders(startedBody);
-  wireChangesExpanders(stoppedBody);
-}
-
-
-
-function listSnapshotYearsDesc(fromYear = 2026) {
-  const rows = execAll(`
-    SELECT DISTINCT substr(snapshot_date, 1, 4) AS y
-    FROM snapshots
-    WHERE snapshot_date IS NOT NULL AND TRIM(snapshot_date) <> ''
-      AND CAST(substr(snapshot_date, 1, 4) AS INTEGER) >= ?
-    ORDER BY y DESC;
-  `, [fromYear]);
-
-  return rows.map(r => Number(r.y)).filter(Boolean);
-}
-
-function computeGrunnrenteYearEvents(year) {
-  const y = Number(year);
-  if (!Number.isFinite(y)) return { started: [], stopped: [], dates: [] };
-
-  const from = `${y}-01-01`;
-  const to = `${y}-12-31`;
-
-  // Hent alle grunnrentepliktige snapshot-rader i året (kun de vi trenger)
-  const rows = execAll(`
-    SELECT snapshot_date, permit_key, row_json
-    FROM permit_snapshot
-    WHERE grunnrente_pliktig = 1
-      AND date(snapshot_date) BETWEEN date(?) AND date(?)
-    ORDER BY date(snapshot_date) ASC;
-  `, [from, to]);
-
-  // date -> Map(orgnr -> { name, permits[] })
-  const byDate = new Map();
-
-  for (const r of rows) {
-    const d = iso10(r.snapshot_date);
-    if (!d) continue;
-
-    const orgnr = extractOwnerOrgnrFromRowJson(r.row_json);
-    if (!orgnr) continue;
-
-    const name = extractOwnerNameFromRowJson(r.row_json);
-    const permit = String(r.permit_key ?? "").trim();
-    if (!permit) continue;
-
-    if (!byDate.has(d)) byDate.set(d, new Map());
-    const m = byDate.get(d);
-
-    if (!m.has(orgnr)) m.set(orgnr, { orgnr, name: name || "", permits: [] });
-    const obj = m.get(orgnr);
-
-    obj.permits.push(permit);
-    if (!obj.name && name) obj.name = name;
-  }
-
-  const dates = Array.from(byDate.keys()).sort((a, b) => a.localeCompare(b));
-
-  function uniqSorted(arr) {
-    return Array.from(new Set((arr || []).map(x => String(x || "").trim()).filter(Boolean)))
-      .sort((a, b) => a.localeCompare(b, "nb", { numeric: true, sensitivity: "base" }));
-  }
-
-  const started = [];
-  const stopped = [];
-
-  let prev = new Map(); // orgnr -> {name, permits[]}
-
-  for (const d of dates) {
-    const curr = byDate.get(d) || new Map();
-
-    const all = new Set([...prev.keys(), ...curr.keys()]);
-    for (const orgnr of all) {
-      const a = prev.get(orgnr);
-      const b = curr.get(orgnr);
-
-      const permitsBefore = uniqSorted(a?.permits || []);
-      const permitsAfter  = uniqSorted(b?.permits || []);
-
-      const beforeCnt = permitsBefore.length;
-      const afterCnt  = permitsAfter.length;
-
-      if (beforeCnt === 0 && afterCnt > 0) {
-        started.push({
-          eventDate: d,
-          orgnr,
-          name: b?.name || a?.name || "",
-          beforeCnt,
-          afterCnt,
-          // for expander
-          added: permitsAfter,
-        });
-      } else if (beforeCnt > 0 && afterCnt === 0) {
-        stopped.push({
-          eventDate: d,
-          orgnr,
-          name: a?.name || b?.name || "",
-          beforeCnt,
-          afterCnt,
-          // for expander
-          removed: permitsBefore,
-        });
-      }
-    }
-
-    prev = curr;
-  }
-
-  // sortering: primært alfabetisk på navn/orgnr, sekundært dato (for stabilitet)
-  started.sort((x, y) =>
-    (String(x.name).localeCompare(String(y.name), "nb", { sensitivity: "base" })) ||
-    x.orgnr.localeCompare(y.orgnr) ||
-    x.eventDate.localeCompare(y.eventDate)
-  );
-
-  stopped.sort((x, y) =>
-    (String(x.name).localeCompare(String(y.name), "nb", { sensitivity: "base" })) ||
-    x.orgnr.localeCompare(y.orgnr) ||
-    x.eventDate.localeCompare(y.eventDate)
-  );
-
-  return { started, stopped, dates };
-}
-
 // -------------------------------
-// NYTT: pill-regler (aktive)
+// Owner/permit empty state helpers
 // -------------------------------
-function normUpper(s) {
-  return (s ?? "").toString().trim().toUpperCase();
-}
-
-function normStage(s) {
-  return (s ?? "")
-    .toString()
-    .toUpperCase()
-    .replace(/[–—]/g, "-")      // lang dash → vanlig dash
-    .replace(/\s*-\s*/g, " - ") // alltid mellomrom rundt -
-    .replace(/\s+/g, " ")       // komprimer whitespace
-    .trim();
-}
-
-function toArray(val) {
-  if (val == null) return [];
-  if (Array.isArray(val)) return val;
-  return val
-    .toString()
-    .split(/[;,/]/)
-    .map(x => x.trim())
-    .filter(Boolean);
-}
-
-// Art: blå hvis Laks/Regnbuørret/Ørret inngår
-const BLUE_ART = new Set(["LAKS", "REGNBUØRRET", "ØRRET"]);
-function isBlueArt(artValue) {
-  const arts = toArray(artValue).map(normUpper);
-  return arts.some(a => BLUE_ART.has(a));
-}
-
-// Formål: blå hvis KOMMERSIELL
-function isBlueFormal(formalValue) {
-  return normUpper(formalValue) === "KOMMERSIELL";
-}
-
-
-// Produksjonsstadium: blå hvis i whitelist
-const BLUE_STAGE = new Set([
-  "MATFISK",
-  "MATFISK - (5% MTB ØKNING)",
-  "MATFISK - GRØNN A",
-  "MATFISK - GRØNN A(5% MTB ØKNING)",
-  "MATFISK - GRØNN B",
-  "MATFISK - GRØNN C",
-  "MATFISK - GRØNN KONVERTERT",
-  "ØKOLOGISK MATFISK",
-].map(normUpper));
-
-function isBlueProduksjonsstadium(stageValue) {
-  return BLUE_STAGE.has(normStage(stageValue));
-}
-
-
-function pillSpanByRule(text, isBlue) {
-  if (!String(text ?? "").trim()) return "";
-  return `<span class="pill ${isBlue ? "pill--blue" : "pill--yellow"}">${escapeHtml(String(text).trim())}</span>`;
-}
-// -------------------------------
-// PRODUKSJONSOMRÅDER – trafikklys
-// -------------------------------
-
-// Faste navn på produksjonsområder (1–13)
-const PRODUCTION_AREA_NAMES = {
-  1: "Svenskegrensen – Jæren",
-  2: "Ryfylke",
-  3: "Karmøy – Sotra",
-  4: "Nordhordland – Stadt",
-  5: "Stadt – Hustadvika",
-  6: "Nordmøre – Sør-Trøndelag",
-  7: "Nord-Trøndelag med Bindal",
-  8: "Helgeland – Bodø",
-  9: "Vestfjorden og Vesterålen",
-  10: "Andøya – Senja",
-  11: "Kvaløya – Loppa",
-  12: "Vest-Finnmark",
-  13: "Øst-Finnmark"
-};
-
-function normTrafficStatus(s) {
-  const t = String(s ?? "").trim().toUpperCase();
-  if (t === "GRØNN") return "GREEN";
-  if (t === "GUL")   return "YELLOW";
-  if (t === "RØD")   return "RED";
-  return null;
-}
-
-function getProductionAreaInfo(prodAreaRaw) {
-  const code = parseProdAreaCode(prodAreaRaw);
-  if (!code) {
-    return { code: String(prodAreaRaw ?? "").trim(), name: "", status: null };
-  }
-
-  const row = one(`
-    SELECT prod_area_status
-    FROM production_area_status
-    WHERE prod_area_code = ?
-    ORDER BY date(snapshot_date) DESC
-    LIMIT 1;
-  `, [code]);
-
-  return {
-    code, // <- alltid 1–13 her
-    name: PRODUCTION_AREA_NAMES[code] || "",
-    status: normTrafficStatus(row?.prod_area_status)
-  };
-}
-
-
-function trafficHtml(code, statusNorm) {
-  const cls =
-    statusNorm === "GREEN"  ? "traffic--green"  :
-    statusNorm === "YELLOW" ? "traffic--yellow" :
-    statusNorm === "RED"    ? "traffic--red"    :
-                              "traffic--unknown";
-
-  const label =
-    statusNorm === "GREEN"  ? "Grønn"  :
-    statusNorm === "YELLOW" ? "Gul"    :
-    statusNorm === "RED"    ? "Rød"    :
-                              "Ukjent";
-
-  return `
-    <span class="traffic ${cls}" title="Status: ${label}">
-      <span class="traffic-dot" aria-hidden="true"></span>
-      <span class="traffic-num">${escapeHtml(code)}</span>
-
-    </span>
-  `;
-}
-
-// --- PERMIT empty state helpers ---
 function setPermitEmptyStateVisible(visible) {
   const el = $("permitEmptyState");
   if (el) el.classList.toggle("hidden", !visible);
@@ -1077,7 +490,6 @@ function setPermitResultsVisible(visible) {
   if (split) split.classList.toggle("hidden", !visible);
 }
 
-// --- OWNER empty/results helpers ---
 function setOwnerEmptyStateVisible(visible) {
   const el = $("ownerEmptyState");
   if (el) el.classList.toggle("hidden", !visible);
@@ -1117,7 +529,7 @@ function clearPermitView() {
   if (card) card.classList.add("hidden");
 
   const tbody = safeEl("permitOwnershipTimeline").querySelector("tbody");
-tbody.innerHTML = "";
+  tbody.innerHTML = "";
 }
 
 function clearOwnerView() {
@@ -1148,7 +560,9 @@ function extractFormalFromRowJson(rowJsonText) {
   return String(d["FORMÅL"] ?? "").trim();
 }
 
-// --- Owner formål filter buttons ---
+// -------------------------------
+// Owner formål filter buttons
+// -------------------------------
 function renderOwnerFormalButtons(countsByFormal /* Map */) {
   const root = $("ownerFormalFilters");
   if (!root) return;
@@ -1176,7 +590,9 @@ function renderOwnerFormalButtons(countsByFormal /* Map */) {
   }
 }
 
-// --- UNIFIED permit card renderer (ACTIVE + HISTORIC) ---
+// -------------------------------
+// UNIFIED permit card renderer
+// -------------------------------
 function renderPermitCardUnified({
   permitKey,
   permitUrl,
@@ -1197,7 +613,6 @@ function renderPermitCardUnified({
   const card = safeEl("permitCard");
   card.classList.remove("hidden");
 
-  // NYTT: Historisk-pill skal være rød (ikke gul)
   const statusPillClass = isActive ? "pill--green" : "pill--red";
   const statusPillText  = isActive ? "Aktiv tillatelse" : "Historisk";
 
@@ -1226,14 +641,12 @@ function renderPermitCardUnified({
   const identRaw = String(ownerIdentity ?? "").trim();
   const ident = identRaw.replace(/\s+/g, "");
 
-  // NYTT: Art/Formål/Produksjonsstadium pill-regler (kun for aktive)
   const artPill = pillSpanByRule(artText, isBlueArt(artText));
   const formalPill = pillSpanByRule(formal, isBlueFormal(formal));
   const prodStagePill = pillSpanByRule(
     produksjonsstadium,
     isBlueProduksjonsstadium(produksjonsstadium)
   );
-
 
   card.innerHTML = `
     <div>
@@ -1254,14 +667,14 @@ function renderPermitCardUnified({
       <div><span class="muted">Org.nr.:</span>
         ${ident ? `<a class="link" href="#/owner/${encodeURIComponent(ident)}">${escapeHtml(ident)}</a>` : "—"}
       </div>
-      
+
       ${tidsbegrenset ? `<div style="margin-top:8px"><span class="muted">Tidsbegrenset:</span> ${escapeHtml(tidsbegrenset)}</div>` : ""}
 
       ${artText ? `
-      <div style="margin-top:8px">
-        <span class="muted">Arter:</span> ${artPill || escapeHtml(valueOrDash(artText))}
-      </div>
-    ` : ""}
+        <div style="margin-top:8px">
+          <span class="muted">Arter:</span> ${artPill || escapeHtml(valueOrDash(artText))}
+        </div>
+      ` : ""}
 
       <div style="margin-top:10px">
         <div>
@@ -1275,7 +688,7 @@ function renderPermitCardUnified({
         </div>
 
         <div style="margin-top:6px"><span class="muted">Tillatelseskapasitet:</span> ${escapeHtml(valueOrDash(kapasitet))}</div>
-      
+
         ${(() => {
           const areaRaw = String(prodOmr ?? "").trim();
           if (!areaRaw || areaRaw === "N/A") {
@@ -1287,7 +700,6 @@ function renderPermitCardUnified({
           }
 
           const info = getProductionAreaInfo(areaRaw);
-
           const areaLine = trafficHtml(info.code, info.status);
           const nameInline = info.name
             ? `<span class="muted" style="margin-left:6px">${escapeHtml(info.name)}</span>`
@@ -1299,7 +711,6 @@ function renderPermitCardUnified({
               ${areaLine}${nameInline}
             </div>
           `;
-
         })()}
 
         ${(vmPill || lpPill) ? `
@@ -1313,7 +724,9 @@ function renderPermitCardUnified({
   `;
 }
 
-// --- UNIFIED owner card renderer (med blå/gul grunnrente-pill) ---
+// -------------------------------
+// UNIFIED owner card renderer
+// -------------------------------
 function renderOwnerCardUnified({
   ownerName,
   ownerIdentity,
@@ -1343,66 +756,48 @@ function renderOwnerCardUnified({
       : `<span class="pill pill--yellow">Ikke grunnrentepliktig</span>`;
 
   const years = (grunnYears || []).filter(Boolean);
-
-const yearsHtml =
-  grunnCount > 0 && years.length > 0
-    ? `
-      <div class="year-note">
-        <div class="year-chips">
-          ${years.map(y => `<span class="year-chip year-chip--active">${escapeHtml(y)}</span>`).join("")}
-        </div>
-        <div class="year-note-text">
-          <div>
-            Angir år der innehaveren har vært eier av tillatelser som i dag er grunnrentepliktige.
+  const yearsHtml =
+    grunnCount > 0 && years.length > 0
+      ? `
+        <div class="year-note">
+          <div class="year-chips">
+            ${years.map(y => `<span class="year-chip year-chip--active">${escapeHtml(y)}</span>`).join("")}
           </div>
-          <div>
-            Historikk før 2025 er beregnet ut fra opplysninger om overføringer hentet fra Akvakulturregisteret.
+          <div class="year-note-text">
+            <div>Angir år der innehaveren har vært eier av tillatelser som i dag er grunnrentepliktige.</div>
+            <div>Historikk før 2025 er beregnet ut fra opplysninger om overføringer hentet fra Akvakulturregisteret.</div>
           </div>
         </div>
-      </div>
-    `
-    : "";
-
-
+      `
+      : "";
 
   card.innerHTML = `
-    <div style="font-size:1.1rem;font-weight:700">
-      ${escapeHtml(name)}
-    </div>
+    <div style="font-size:1.1rem;font-weight:700">${escapeHtml(name)}</div>
 
     <div style="margin-top:10px">
       <div><span class="muted">Org.nr.:</span> ${escapeHtml(ident || "—")}</div>
     </div>
 
-    <div class="pills" style="margin-top:10px">
-      ${grunnPillHtml}
-    </div>
+    <div class="pills" style="margin-top:10px">${grunnPillHtml}</div>
 
     ${yearsHtml}
 
     <div style="margin-top:12px">
-      <div>
-        <span class="muted">Aktive tillatelser:</span>
-        ${escapeHtml(String(activeCount ?? 0))}${fmtTN(activeCapacityTN)}
-      </div>
-      <div>
-        <span class="muted">Grunnrentepliktige tillatelser:</span>
-        ${escapeHtml(String(grunnrenteActiveCount ?? 0))}${fmtTN(grunnrenteCapacityTN)}
-      </div>
-      <div>
-        <span class="muted">Historiske tillatelser:</span>
-        ${escapeHtml(String(formerPermitCount ?? 0))}
-      </div>
+      <div><span class="muted">Aktive tillatelser:</span> ${escapeHtml(String(activeCount ?? 0))}${fmtTN(activeCapacityTN)}</div>
+      <div><span class="muted">Grunnrentepliktige tillatelser:</span> ${escapeHtml(String(grunnrenteActiveCount ?? 0))}${fmtTN(grunnrenteCapacityTN)}</div>
+      <div><span class="muted">Historiske tillatelser:</span> ${escapeHtml(String(formerPermitCount ?? 0))}</div>
     </div>
   `;
 }
 
-
-
-// --- sort state (NOW) ---
+// -------------------------------
+// sort state (NOW)
+// -------------------------------
 const sortState = { now: { key: "permit_key", dir: 1 } };
 
-// --- load db ---
+// -------------------------------
+// load db
+// -------------------------------
 async function loadDatabase() {
   setStatus("Laster database…");
   setMeta("");
@@ -1420,12 +815,14 @@ async function loadDatabase() {
   if (db) db.close();
   db = new SQL.Database(new Uint8Array(buf));
 
+  // Reset area indexes når DB reloades
+  areaIndexBuilt = false;
+
   schema.permit_current_has_art = hasColumn("permit_current", "art");
   schema.permit_snapshot_has_art = hasColumn("permit_snapshot", "art");
   schema.permit_snapshot_has_row_json = hasColumn("permit_snapshot", "row_json");
   schema.permit_snapshot_has_grunnrente = hasColumn("permit_snapshot", "grunnrente_pliktig");
 
-    // production_area_status kolonner (robusthet)
   schema.production_area_has_name =
     hasColumn("production_area_status", "production_area_name") ||
     hasColumn("production_area_status", "area_name") ||
@@ -1433,14 +830,14 @@ async function loadDatabase() {
 
   schema.production_area_has_status =
     hasColumn("production_area_status", "status") ||
-    hasColumn("production_area_status", "color");
+    hasColumn("production_area_status", "color") ||
+    hasColumn("production_area_status", "prod_area_status");
 
   schema.production_area_has_date =
     hasColumn("production_area_status", "status_date") ||
     hasColumn("production_area_status", "date") ||
     hasColumn("production_area_status", "snapshot_date") ||
     hasColumn("production_area_status", "as_of");
-
 
   // Bygg liste over alle formål i databasen (fra permit_current.row_json)
   try {
@@ -1473,7 +870,9 @@ async function loadDatabase() {
   renderRoute();
 }
 
-// --- NOW view ---
+// -------------------------------
+// NOW view
+// -------------------------------
 function renderNow() {
   setActiveTab("tab-now");
   showView("view-now");
@@ -1500,11 +899,11 @@ function renderNow() {
         String(r.owner_orgnr ?? "").toLowerCase().includes(q)
       )
     : rows;
-  
-    const empty = $("historyEmpty");
-      if (empty) {
-        empty.classList.toggle("hidden", filtered.length !== 0);
-      }
+
+  const empty = $("historyEmpty");
+  if (empty) {
+    empty.classList.toggle("hidden", filtered.length !== 0);
+  }
 
   const { key, dir } = sortState.now;
   filtered.sort((a, b) => {
@@ -1558,7 +957,9 @@ function renderNow() {
   }
 }
 
-// --- PERMIT view ---
+// -------------------------------
+// PERMIT view
+// -------------------------------
 function renderPermit(permitKey) {
   setActiveTab("tab-permit");
   showView("view-permit");
@@ -1605,22 +1006,19 @@ function renderPermit(permitKey) {
   `, [permitKey]);
 
   const hist = execAll(`
-  SELECT
-    valid_from AS valid_from,
-    valid_to   AS valid_to,
-    COALESCE(NULLIF(valid_to,''), 'Aktiv') AS valid_to_label,
-    owner_name AS owner_name,
-    owner_identity AS owner_identity,
-    tidsbegrenset AS tidsbegrenset
-  FROM ownership_history
-  WHERE
-    UPPER(REPLACE(REPLACE(TRIM(permit_key), ' ', ''), '-', '')) =
-    UPPER(REPLACE(REPLACE(TRIM(?),         ' ', ''), '-', ''))
-  ORDER BY date(valid_from), id;
-`, [permitKey]);
-
-console.log("ownership_history rows:", hist.length, "for", permitKey);
-
+    SELECT
+      valid_from AS valid_from,
+      valid_to   AS valid_to,
+      COALESCE(NULLIF(valid_to,''), 'Aktiv') AS valid_to_label,
+      owner_name AS owner_name,
+      owner_identity AS owner_identity,
+      tidsbegrenset AS tidsbegrenset
+    FROM ownership_history
+    WHERE
+      UPPER(REPLACE(REPLACE(TRIM(permit_key), ' ', ''), '-', '')) =
+      UPPER(REPLACE(REPLACE(TRIM(?),         ' ', ''), '-', ''))
+    ORDER BY date(valid_from), id;
+  `, [permitKey]);
 
   if (!now && hist.length === 0) {
     setPermitEmptyStateContent({
@@ -1634,30 +1032,6 @@ console.log("ownership_history rows:", hist.length, "for", permitKey);
 
   setPermitResultsVisible(true);
   setPermitEmptyStateVisible(false);
-
-  // Årsak-kolonne: vis hvis noen har årsak
-  let showReasonColumn = false;
-  for (let i = 0; i < hist.length; i++) {
-    const r = hist[i];
-    const next = hist[i + 1] || null;
-
-    const validTo = iso10(r.valid_to);
-    const tb = iso10(r.tidsbegrenset);
-
-    let reason = "";
-    if (!validTo) {
-      reason = "";
-    } else if (tb && tb === validTo) {
-      reason = `Utløpt (tidsbegrenset ${tb})`;
-    } else if (next) {
-      reason = "Overført / ny periode";
-    } else {
-      reason = "Avsluttet";
-    }
-    if (reason) { showReasonColumn = true; break; }
-  }
-  const reasonTh = $("permitReasonTh");
-  if (reasonTh) reasonTh.style.display = showReasonColumn ? "" : "none";
 
   // Tidsbegrenset for kort: siste ikke-tomme i historikk
   let tidsbegrensetCard = "";
@@ -1761,87 +1135,69 @@ console.log("ownership_history rows:", hist.length, "for", permitKey);
     });
   }
 
-  
-// --- NY: Transaksjonshistorikk basert på license_original_owner + license_transfers ---
-const tb = safeEl("permitOwnershipTimeline").querySelector("tbody");
-tb.innerHTML = "";
+  // --- Transaksjonshistorikk (license_original_owner + license_transfers) ---
+  const tb = safeEl("permitOwnershipTimeline").querySelector("tbody");
+  tb.innerHTML = "";
 
-function dayBefore(isoDate) {
-  const d = iso10(isoDate);
-  if (!d) return "";
-  // Bruk UTC for å unngå rare DST-ting
-  const dt = new Date(d + "T00:00:00Z");
-  dt.setUTCDate(dt.getUTCDate() - 1);
-  return dt.toISOString().slice(0, 10);
-}
+  function dayBefore(isoDate) {
+    const d = iso10(isoDate);
+    if (!d) return "";
+    const dt = new Date(d + "T00:00:00Z");
+    dt.setUTCDate(dt.getUTCDate() - 1);
+    return dt.toISOString().slice(0, 10);
+  }
 
-const original = getOriginalOwnerForPermit(permitKey);
-const transfers = getTransferEventsForPermit(permitKey); // sortert ASC i din funksjon
+  const original = getOriginalOwnerForPermit(permitKey);
+  const transfers = getTransferEventsForPermit(permitKey);
 
-// Bygg kronologisk liste (eldst -> nyest)
-const events = [];
+  const events = [];
+  if (original) {
+    events.push({
+      from: "Opprinnelig",
+      name: original.name || "—",
+      ident: original.ident || ""
+    });
+  }
 
-// Opprinnelig eier (har ikke "transaksjonsdato" i datasettet)
-if (original) {
-  events.push({
-    from: "Opprinnelig", // eller "" hvis du vil ha tom
-    name: original.name || "—",
-    ident: original.ident || ""
-  });
-}
+  for (const t of transfers) {
+    events.push({
+      from: iso10(t.event_date) || "—",
+      name: t.to_name || "—",
+      ident: t.to_ident || ""
+    });
+  }
 
-// Hver transfer representerer "ny innehaver gjelder fra event_date"
-for (const t of transfers) {
-  events.push({
-    from: iso10(t.event_date) || "—",
-    name: t.to_name || "—",
-    ident: t.to_ident || ""
-  });
-}
+  for (let i = 0; i < events.length; i++) {
+    const next = events[i + 1] || null;
+    if (!next) {
+      events[i].to = "Aktiv";
+    } else {
+      const nextFromIso = iso10(next.from);
+      events[i].to = nextFromIso ? dayBefore(nextFromIso) : "—";
+    }
+  }
 
-// Beregn "Gjelder til":
-// - For siste rad: Aktiv
-// - For tidligere rader: dagen før neste "from"-dato (hvis neste har dato)
-for (let i = 0; i < events.length; i++) {
-  const next = events[i + 1] || null;
+  events.reverse();
 
-  if (!next) {
-    events[i].to = "Aktiv";
-  } else {
-    // Hvis neste.from er en dato (YYYY-MM-DD), bruk dagen før
-    const nextFromIso = iso10(next.from);
-    events[i].to = nextFromIso ? dayBefore(nextFromIso) : "—";
+  for (const r of events) {
+    const ident = String(r.ident ?? "").trim();
+    const fromText = iso10(r.from) ? iso10(r.from) : String(r.from || "—");
+    const toText = iso10(r.to) ? iso10(r.to) : String(r.to || "—");
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(fromText)}</td>
+      <td>${escapeHtml(toText === "Aktiv" ? "Aktiv" : toText)}</td>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${ident ? `<a class="link" href="#/owner/${encodeURIComponent(ident)}">${escapeHtml(ident)}</a>` : "—"}</td>
+    `;
+    tb.appendChild(tr);
   }
 }
 
-// Vis nyest øverst
-events.reverse();
-
-for (const r of events) {
-  const ident = String(r.ident ?? "").trim();
-
-  // "Gjelder fra": hvis dato, vis som dato; ellers tekst (Opprinnelig/—)
-  const fromText = iso10(r.from) ? iso10(r.from) : String(r.from || "—");
-
-  // "Gjelder til": hvis dato, vis som dato; ellers Aktiv/—
-  const toText = iso10(r.to) ? iso10(r.to) : String(r.to || "—");
-
-  const tr = document.createElement("tr");
-  tr.innerHTML = `
-    <td>${escapeHtml(fromText)}</td>
-    <td>${escapeHtml(toText === "Aktiv" ? "Aktiv" : toText)}</td>
-    <td>${escapeHtml(r.name)}</td>
-    <td>${ident ? `<a class="link" href="#/owner/${encodeURIComponent(ident)}">${escapeHtml(ident)}</a>` : "—"}</td>
-  `;
-  tb.appendChild(tr);
-}
-
-
-  
-
-}
-
-// --- OWNER view ---
+// -------------------------------
+// OWNER view
+// -------------------------------
 function renderOwner(ownerIdentity) {
   setActiveTab("tab-owner");
   showView("view-owner");
@@ -1931,39 +1287,29 @@ function renderOwner(ownerIdentity) {
     ORDER BY permit_key;
   `, [ownerIdentityNorm]);
 
-  // --- Kapasitetssummer (kun TN) ---
-const activeCapacityTN = active.reduce(
-  (sum, r) => sum + extractCapacityTN(r.row_json),
-  0
-);
+  const activeCapacityTN = active.reduce((sum, r) => sum + extractCapacityTN(r.row_json), 0);
 
-const grunnrenteCapacityTN = active.reduce(
-  (sum, r) =>
-    Number(r.grunnrente_pliktig) === 1
-      ? sum + extractCapacityTN(r.row_json)
-      : sum,
-  0
-);
+  const grunnrenteCapacityTN = active.reduce(
+    (sum, r) => (Number(r.grunnrente_pliktig) === 1 ? sum + extractCapacityTN(r.row_json) : sum),
+    0
+  );
 
   const grunnrenteActiveCount = active.reduce((acc, r) => acc + (Number(r.grunnrente_pliktig) === 1 ? 1 : 0), 0);
   const grunnYears = getGrunnrenteYearsForOwner(ownerIdentityNorm, 2023);
-
 
   setOwnerEmptyStateVisible(false);
   setOwnerResultsVisible(true);
 
   renderOwnerCardUnified({
-  ownerName: stats.owner_name || "(ukjent)",
-  ownerIdentity: ownerIdentityNorm,
-  activeCount: Number(stats.active_permits ?? 0),
-  grunnrenteActiveCount,
-  formerPermitCount: Number(stats.former_permits ?? 0),
-  activeCapacityTN,
-  grunnrenteCapacityTN,
-  grunnYears,
-});
-
-
+    ownerName: stats.owner_name || "(ukjent)",
+    ownerIdentity: ownerIdentityNorm,
+    activeCount: Number(stats.active_permits ?? 0),
+    grunnrenteActiveCount,
+    formerPermitCount: Number(stats.former_permits ?? 0),
+    activeCapacityTN,
+    grunnrenteCapacityTN,
+    grunnYears,
+  });
 
   // --- FILTER: grunnrente + formål (kun for aktiv-tabellen) ---
   const onlyGrunnrente = $("ownerOnlyGrunnrente")?.checked === true;
@@ -2009,8 +1355,7 @@ const grunnrenteCapacityTN = active.reduce(
     let art = artRaw;
     if (artRaw) {
       const parts = artRaw.split(",").map(s => s.trim()).filter(Boolean);
-      if (parts.length > 3) art = `${parts.slice(0, 3).join(", ")}*`;
-      else art = parts.join(", ");
+      art = (parts.length > 3) ? `${parts.slice(0, 3).join(", ")}*` : parts.join(", ");
     }
 
     const formal = String(rowDict["FORMÅL"] ?? "").trim();
@@ -2029,21 +1374,18 @@ const grunnrenteCapacityTN = active.reduce(
       <td>${escapeHtml(produksjonsform)}</td>
       <td>${escapeHtml(kapasitet)}</td>
       <td>
-  ${
-    prodOmr
-      ? (() => {
-          const info = getProductionAreaInfo(prodOmr);
-          return `
-            ${trafficHtml(info.code, info.status)}
-            ${info.name
-              ? `<div class="muted-small">${escapeHtml(info.name)}</div>`
-              : ""}
-          `;
-        })()
-      : "N/A"
-  }
-</td>
-
+        ${
+          prodOmr
+            ? (() => {
+                const info = getProductionAreaInfo(prodOmr);
+                return `
+                  ${trafficHtml(info.code, info.status)}
+                  ${info.name ? `<div class="muted-small">${escapeHtml(info.name)}</div>` : ""}
+                `;
+              })()
+            : "N/A"
+        }
+      </td>
     `;
     activeBody.appendChild(tr);
   }
@@ -2105,7 +1447,9 @@ const grunnrenteCapacityTN = active.reduce(
   }
 }
 
-// --- HISTORY view ---
+// -------------------------------
+// HISTORY view
+// -------------------------------
 function renderHistory() {
   setActiveTab("tab-history");
   showView("view-history");
@@ -2173,12 +1517,10 @@ function renderHistory() {
     ORDER BY lo.valid_to DESC, lo.permit_key;
   `);
 
-  // Filter: kun grunnrentepliktig
   const rowsAfterGr = onlyGr
     ? rows.filter(r => Number(r.grunnrente_pliktig) === 1)
     : rows;
 
-  // Søk
   const filtered = q
     ? rowsAfterGr.filter(r =>
         String(r.permit_key ?? "").toLowerCase().includes(q) ||
@@ -2187,11 +1529,9 @@ function renderHistory() {
       )
     : rowsAfterGr;
 
-  // Empty state
   const empty = $("historyEmpty");
   if (empty) empty.classList.toggle("hidden", filtered.length !== 0);
 
-  // Skjul/vis tabell
   const tableWrap = $("historyTableWrap");
   if (tableWrap) tableWrap.classList.toggle("hidden", filtered.length === 0);
 
@@ -2223,13 +1563,351 @@ function renderHistory() {
     `;
     tbody.appendChild(tr);
   }
-} 
+}
 
+// -------------------------------
+// CHANGES (grunnrente) helpers + view
+// -------------------------------
+function uniqSorted(arr) {
+  return Array.from(new Set((arr || []).map(x => String(x || "").trim()).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b, "nb", { numeric: true, sensitivity: "base" }));
+}
+
+function listSnapshotYearsDesc(fromYear = 2026) {
+  const rows = execAll(`
+    SELECT DISTINCT substr(snapshot_date, 1, 4) AS y
+    FROM snapshots
+    WHERE snapshot_date IS NOT NULL AND TRIM(snapshot_date) <> ''
+      AND CAST(substr(snapshot_date, 1, 4) AS INTEGER) >= ?
+    ORDER BY y DESC;
+  `, [fromYear]);
+
+  return rows.map(r => Number(r.y)).filter(Boolean);
+}
+
+function computeGrunnrenteYearEvents(year) {
+  const y = Number(year);
+  if (!Number.isFinite(y)) return { started: [], stopped: [], dates: [] };
+
+  const from = `${y}-01-01`;
+  const to = `${y}-12-31`;
+
+  const rows = execAll(`
+    SELECT snapshot_date, permit_key, row_json
+    FROM permit_snapshot
+    WHERE grunnrente_pliktig = 1
+      AND date(snapshot_date) BETWEEN date(?) AND date(?)
+    ORDER BY date(snapshot_date) ASC;
+  `, [from, to]);
+
+  // date -> Map(orgnr -> { name, permits[] })
+  const byDate = new Map();
+
+  for (const r of rows) {
+    const d = iso10(r.snapshot_date);
+    if (!d) continue;
+
+    const orgnr = extractOwnerOrgnrFromRowJson(r.row_json);
+    if (!orgnr) continue;
+
+    const name = extractOwnerNameFromRowJson(r.row_json);
+    const permit = String(r.permit_key ?? "").trim();
+    if (!permit) continue;
+
+    if (!byDate.has(d)) byDate.set(d, new Map());
+    const m = byDate.get(d);
+
+    if (!m.has(orgnr)) m.set(orgnr, { orgnr, name: name || "", permits: [] });
+    const obj = m.get(orgnr);
+
+    obj.permits.push(permit);
+    if (!obj.name && name) obj.name = name;
+  }
+
+  const dates = Array.from(byDate.keys()).sort((a, b) => a.localeCompare(b));
+
+  const started = [];
+  const stopped = [];
+
+  let prev = new Map();
+
+  for (const d of dates) {
+    const curr = byDate.get(d) || new Map();
+
+    const all = new Set([...prev.keys(), ...curr.keys()]);
+    for (const orgnr of all) {
+      const a = prev.get(orgnr);
+      const b = curr.get(orgnr);
+
+      const permitsBefore = uniqSorted(a?.permits || []);
+      const permitsAfter  = uniqSorted(b?.permits || []);
+
+      const beforeCnt = permitsBefore.length;
+      const afterCnt  = permitsAfter.length;
+
+      if (beforeCnt === 0 && afterCnt > 0) {
+        started.push({
+          eventDate: d,
+          orgnr,
+          name: b?.name || a?.name || "",
+          beforeCnt,
+          afterCnt,
+          added: permitsAfter,
+        });
+      } else if (beforeCnt > 0 && afterCnt === 0) {
+        stopped.push({
+          eventDate: d,
+          orgnr,
+          name: a?.name || b?.name || "",
+          beforeCnt,
+          afterCnt,
+          removed: permitsBefore,
+        });
+      }
+    }
+    prev = curr;
+  }
+
+  started.sort((x, y2) =>
+    (String(x.name).localeCompare(String(y2.name), "nb", { sensitivity: "base" })) ||
+    x.orgnr.localeCompare(y2.orgnr) ||
+    x.eventDate.localeCompare(y2.eventDate)
+  );
+
+  stopped.sort((x, y2) =>
+    (String(x.name).localeCompare(String(y2.name), "nb", { sensitivity: "base" })) ||
+    x.orgnr.localeCompare(y2.orgnr) ||
+    x.eventDate.localeCompare(y2.eventDate)
+  );
+
+  return { started, stopped, dates };
+}
+
+function renderChanges() {
+  setActiveTab("tab-changes");
+  showView("view-changes");
+
+  const sel = safeEl("changesYear");
+  const meta = safeEl("changesMeta");
+  const startedBody = safeEl("changesStartedTable").querySelector("tbody");
+  const stoppedBody = safeEl("changesStoppedTable").querySelector("tbody");
+  const startedEmpty = safeEl("changesStartedEmpty");
+  const stoppedEmpty = safeEl("changesStoppedEmpty");
+
+  const years = listSnapshotYearsDesc(2026);
+  if (years.length === 0) {
+    meta.textContent = "Ingen snapshot-år funnet (fra og med 2026).";
+    sel.innerHTML = "";
+    startedBody.innerHTML = "";
+    stoppedBody.innerHTML = "";
+    startedEmpty.textContent = "";
+    stoppedEmpty.textContent = "";
+    return;
+  }
+
+  if (!sel.options.length) {
+    sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join("");
+    sel.value = String(years[0]);
+  }
+
+  const year = Number(sel.value) || years[0];
+  const { started, stopped, dates } = computeGrunnrenteYearEvents(year);
+
+  meta.textContent =
+    `Viser alle endringer i grunnrenteplikt i ${year}. ` +
+    `(Starter: ${started.length}, Slutter: ${stopped.length}, snapshot-dager i året: ${dates.length})`;
+
+  function permitChipsHtml(permits, pillClass) {
+    const list = permits || [];
+    if (!list.length) return `<div class="muted-small">—</div>`;
+    return `
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${list.map(p =>
+          `<a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(p))}">
+            <span class="pill ${pillClass}">${escapeHtml(p)}</span>
+          </a>`
+        ).join("")}
+      </div>
+    `;
+  }
+
+  function renderChangeDetailsBox(r, mode /* started|stopped */) {
+    const dateLine = r.eventDate ? `<div class="muted-small" style="margin-bottom:8px">Dato: ${escapeHtml(formatNorwegianDate(r.eventDate))}</div>` : "";
+    if (mode === "started") {
+      const added = r.added || [];
+      return `
+        <div class="details-box">
+          ${dateLine}
+          <div class="muted-small" style="margin-bottom:6px">Har blitt innehaver av (${added.length}):</div>
+          ${permitChipsHtml(added, "pill--blue")}
+        </div>
+      `;
+    }
+    const removed = r.removed || [];
+    return `
+      <div class="details-box">
+        ${dateLine}
+        <div class="muted-small" style="margin-bottom:6px">Ikke lenger innehaver av (${removed.length}):</div>
+        ${permitChipsHtml(removed, "pill--red")}
+      </div>
+    `;
+  }
+
+  function wireChangesExpanders(tbodyEl) {
+    tbodyEl.onclick = (e) => {
+      const btn = e.target.closest(".expander-btn");
+      if (!btn) return;
+
+      const row = e.target.closest("tr");
+      if (!row) return;
+
+      const key = row.dataset.key;
+      if (!key) return;
+
+      const detailsRow = tbodyEl.querySelector(`tr.details-row[data-details-for="${key}"]`);
+      if (!detailsRow) return;
+
+      const isOpen = !detailsRow.classList.contains("hidden");
+      detailsRow.classList.toggle("hidden", isOpen);
+      row.classList.toggle("is-open", !isOpen);
+      btn.setAttribute("aria-expanded", String(!isOpen));
+    };
+  }
+
+  // started
+  startedBody.innerHTML = "";
+  if (started.length === 0) {
+    startedEmpty.textContent = `Ingen innehavere startet grunnrenteplikt i ${year}.`;
+  } else {
+    startedEmpty.textContent = "";
+    for (const r of started) {
+      const key = `${r.orgnr}__${r.eventDate}`;
+      const tr = document.createElement("tr");
+      tr.dataset.key = key;
+      tr.innerHTML = `
+        <td>
+          <button class="expander-btn" type="button" aria-label="Vis detaljer" aria-expanded="false">
+            <span class="chev">▶</span>
+          </button>
+        </td>
+        <td>${escapeHtml(r.name || "—")}</td>
+        <td><a class="link" href="#/owner/${encodeURIComponent(r.orgnr)}">${escapeHtml(r.orgnr)}</a></td>
+        <td>${escapeHtml(`${r.beforeCnt} → ${r.afterCnt}`)}</td>
+      `;
+      startedBody.appendChild(tr);
+
+      const detailsTr = document.createElement("tr");
+      detailsTr.className = "details-row hidden";
+      detailsTr.dataset.detailsFor = key;
+      detailsTr.innerHTML = `<td colspan="4">${renderChangeDetailsBox(r, "started")}</td>`;
+      startedBody.appendChild(detailsTr);
+    }
+  }
+
+  // stopped
+  stoppedBody.innerHTML = "";
+  if (stopped.length === 0) {
+    stoppedEmpty.textContent = `Ingen innehavere sluttet grunnrenteplikt i ${year}.`;
+  } else {
+    stoppedEmpty.textContent = "";
+    for (const r of stopped) {
+      const key = `${r.orgnr}__${r.eventDate}`;
+      const tr = document.createElement("tr");
+      tr.dataset.key = key;
+      tr.innerHTML = `
+        <td>
+          <button class="expander-btn" type="button" aria-label="Vis detaljer" aria-expanded="false">
+            <span class="chev">▶</span>
+          </button>
+        </td>
+        <td>${escapeHtml(r.name || "—")}</td>
+        <td><a class="link" href="#/owner/${encodeURIComponent(r.orgnr)}">${escapeHtml(r.orgnr)}</a></td>
+        <td>${escapeHtml(`${r.beforeCnt} → ${r.afterCnt}`)}</td>
+      `;
+      stoppedBody.appendChild(tr);
+
+      const detailsTr = document.createElement("tr");
+      detailsTr.className = "details-row hidden";
+      detailsTr.dataset.detailsFor = key;
+      detailsTr.innerHTML = `<td colspan="4">${renderChangeDetailsBox(r, "stopped")}</td>`;
+      stoppedBody.appendChild(detailsTr);
+    }
+  }
+
+  wireChangesExpanders(startedBody);
+  wireChangesExpanders(stoppedBody);
+}
+
+// -------------------------------
+// PRODUKSJONSOMRÅDER: bygg indekser (NY: nonGrs/grs/capTN, ingen .count)
+// -------------------------------
+function buildAreaIndexOnce() {
+  if (areaIndexBuilt) return;
+
+  areaOwnersIndex = new Map();
+  areaPermitCountGrs = new Map();
+  areaPermitCountNonGrs = new Map();
+  areaCapacityTN = new Map();
+
+  const rows = execAll(`
+    SELECT owner_name, owner_identity, row_json, grunnrente_pliktig
+    FROM permit_current;
+  `);
+
+  for (const r of rows) {
+    const areaRaw = getProdOmrFromRowJson(r.row_json);
+    const code = parseProdAreaCode(areaRaw);
+    if (!code) continue;
+
+    const isGrs = Number(r.grunnrente_pliktig) === 1;
+    const cap = extractCapacityTN(r.row_json);
+
+    // område-summer
+    areaCapacityTN.set(code, (areaCapacityTN.get(code) || 0) + cap);
+    if (isGrs) {
+      areaPermitCountGrs.set(code, (areaPermitCountGrs.get(code) || 0) + 1);
+    } else {
+      areaPermitCountNonGrs.set(code, (areaPermitCountNonGrs.get(code) || 0) + 1);
+    }
+
+    // per selskap i området
+    if (!areaOwnersIndex.has(code)) areaOwnersIndex.set(code, new Map());
+    const m = areaOwnersIndex.get(code);
+
+    const ident = String(r.owner_identity ?? "").trim().replace(/\s+/g, "");
+    const name  = String(r.owner_name ?? "").trim();
+
+    const key = ident || name || "(ukjent)";
+
+    const prev = m.get(key) || {
+      owner_name: name,
+      owner_identity: ident,
+      nonGrsCount: 0,
+      grsCount: 0,
+      capTN: 0,
+    };
+
+    if (isGrs) prev.grsCount += 1;
+    else prev.nonGrsCount += 1;
+
+    prev.capTN += cap;
+
+    if (!prev.owner_name && name) prev.owner_name = name;
+    if (!prev.owner_identity && ident) prev.owner_identity = ident;
+
+    m.set(key, prev);
+  }
+
+  areaIndexBuilt = true;
+}
+
+// -------------------------------
+// PRODUKSJONSOMRÅDER view (NY detalj-tabell per selskap)
+// -------------------------------
 function renderAreas() {
   setActiveTab("tab-areas");
   showView("view-areas");
 
-  // Bygg indeks over selskaper per område (én gang)
   buildAreaIndexOnce();
 
   // Hent siste status per område
@@ -2314,7 +1992,7 @@ function renderAreas() {
     tbody.appendChild(detailsTr);
   }
 
-  // --- Sumrad nederst ---
+  // Sumrad nederst
   const sumCapText = sumCap > 0
     ? `${Math.round(sumCap).toLocaleString("nb-NO")} TN`
     : "—";
@@ -2329,6 +2007,21 @@ function renderAreas() {
     <td style="text-align:right;font-weight:700">${escapeHtml(sumCapText)}</td>
   `;
   tbody.appendChild(sumTr);
+
+  function fmtTN(n) {
+    const v = Number(n || 0);
+    if (!Number.isFinite(v) || v <= 0) return "—";
+    return `${Math.round(v).toLocaleString("nb-NO")} TN`;
+  }
+
+  function ownerLinkHtml(o) {
+    const name = escapeHtml(o.owner_name || "(ukjent)");
+    const ident = String(o.owner_identity ?? "").trim();
+    if (ident) {
+      return `<a class="link" href="#/owner/${encodeURIComponent(ident)}">${name}</a> <span class="muted-small">(${escapeHtml(ident)})</span>`;
+    }
+    return name;
+  }
 
   // Klikk-håndtering (delegert)
   tbody.onclick = (e) => {
@@ -2350,42 +2043,70 @@ function renderAreas() {
     row.classList.toggle("is-open", !isOpen);
     btn.setAttribute("aria-expanded", String(!isOpen));
 
-    if (!isOpen) {
-      const box = detailsRow.querySelector(".details-box");
-      if (!box) return;
+    if (isOpen) return;
 
-      const ownersMap = areaOwnersIndex.get(code) || new Map();
-      const owners = Array.from(ownersMap.values())
-        .sort((a, b) => (b.count - a.count) || String(a.owner_name).localeCompare(String(b.owner_name), "nb", { sensitivity: "base" }));
+    const box = detailsRow.querySelector(".details-box");
+    if (!box) return;
 
-      if (owners.length === 0) {
-        box.innerHTML = `<div class="details-empty">Ingen aktive tillatelser funnet i dette området.</div>`;
-        return;
-      }
+    const ownersMap = areaOwnersIndex.get(code) || new Map();
+    const owners = Array.from(ownersMap.values())
+      .map(o => ({
+        ...o,
+        total: Number(o.nonGrsCount || 0) + Number(o.grsCount || 0),
+      }))
+      .sort((a, b) =>
+        (b.total - a.total) ||
+        (Number(b.grsCount || 0) - Number(a.grsCount || 0)) ||
+        (Number(b.capTN || 0) - Number(a.capTN || 0)) ||
+        String(a.owner_name || "").localeCompare(String(b.owner_name || ""), "nb", { sensitivity: "base" })
+      );
 
-      box.innerHTML = `
-        <div class="details-grid">
-          ${owners.map(o => {
-            const name = escapeHtml(o.owner_name || "(ukjent)");
-            const ident = String(o.owner_identity ?? "").trim();
-            const left = ident
-              ? `<a class="link" href="#/owner/${encodeURIComponent(ident)}">${name}</a> <span class="muted-small">(${escapeHtml(ident)})</span>`
-              : `${name}`;
-            return `
-              <div class="details-item">
-                <div>${left}</div>
-                <div class="details-count">${escapeHtml(String(o.count))}</div>
-              </div>
-            `;
-          }).join("")}
-        </div>
-      `;
+    if (owners.length === 0) {
+      box.innerHTML = `<div class="details-empty">Ingen aktive tillatelser funnet i dette området.</div>`;
+      return;
     }
+
+    const sumNon = owners.reduce((s, o) => s + Number(o.nonGrsCount || 0), 0);
+    const sumGrs = owners.reduce((s, o) => s + Number(o.grsCount || 0), 0);
+    const sumCap = owners.reduce((s, o) => s + Number(o.capTN || 0), 0);
+
+    box.innerHTML = `
+      <div style="overflow:auto">
+        <table class="mini-table" style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:6px 4px">Selskap</th>
+              <th style="text-align:right;padding:6px 4px">Ikke GRS</th>
+              <th style="text-align:right;padding:6px 4px">GRS</th>
+              <th style="text-align:right;padding:6px 4px">Kapasitet (TN)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${owners.map(o => `
+              <tr>
+                <td style="padding:6px 4px">${ownerLinkHtml(o)}</td>
+                <td style="padding:6px 4px;text-align:right">${escapeHtml(Number(o.nonGrsCount || 0).toLocaleString("nb-NO"))}</td>
+                <td style="padding:6px 4px;text-align:right">${escapeHtml(Number(o.grsCount || 0).toLocaleString("nb-NO"))}</td>
+                <td style="padding:6px 4px;text-align:right">${escapeHtml(fmtTN(o.capTN))}</td>
+              </tr>
+            `).join("")}
+
+            <tr>
+              <td style="padding:8px 4px;font-weight:700;border-top:1px solid rgba(0,0,0,.08)">Sum</td>
+              <td style="padding:8px 4px;text-align:right;font-weight:700;border-top:1px solid rgba(0,0,0,.08)">${escapeHtml(sumNon.toLocaleString("nb-NO"))}</td>
+              <td style="padding:8px 4px;text-align:right;font-weight:700;border-top:1px solid rgba(0,0,0,.08)">${escapeHtml(sumGrs.toLocaleString("nb-NO"))}</td>
+              <td style="padding:8px 4px;text-align:right;font-weight:700;border-top:1px solid rgba(0,0,0,.08)">${escapeHtml(fmtTN(sumCap))}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
   };
 }
 
-
-// --- routing ---
+// -------------------------------
+// routing
+// -------------------------------
 function parseHash() {
   const h = (location.hash || "#/now").replace(/^#\/?/, "");
   const parts = h.split("/").filter(Boolean);
@@ -2402,180 +2123,19 @@ function parseHash() {
     return { view: "owner", ident };
   }
 
-  // 👇 NYTT: Historikk (støtter både /history og /historikk)
   if (parts[0] === "history" || parts[0] === "historikk") {
     return { view: "history" };
   }
 
-  // 👇 NYTT: Produksjonsområder
   if (parts[0] === "areas" || parts[0] === "produksjonsomrader" || parts[0] === "produksjonsområder") {
     return { view: "areas" };
   }
-  // 👇 NYTT: Endringer i grunnrente
+
   if (parts[0] === "changes" || parts[0] === "endringer") {
-  return { view: "changes" };
-}
+    return { view: "changes" };
+  }
 
   return { view: "now" };
-}
-
-function renderAreas() {
-  setActiveTab("tab-areas");
-  showView("view-areas");
-
-  // Bygg indeks over selskaper per område (én gang)
-  buildAreaIndexOnce();
-
-  // Hent siste status per område
-  const statusRows = execAll(`
-    WITH latest AS (
-      SELECT prod_area_code, MAX(snapshot_date) AS max_date
-      FROM production_area_status
-      GROUP BY prod_area_code
-    )
-    SELECT
-      pas.prod_area_code AS prod_area_code,
-      pas.prod_area_status AS prod_area_status,
-      pas.snapshot_date AS snapshot_date
-    FROM production_area_status pas
-    JOIN latest l
-      ON l.prod_area_code = pas.prod_area_code
-     AND l.max_date = pas.snapshot_date
-    ORDER BY pas.prod_area_code;
-  `);
-
-  const statusByCode = new Map();
-  for (const r of statusRows) {
-    statusByCode.set(Number(r.prod_area_code), normTrafficStatus(r.prod_area_status));
-  }
-
-  const tbody = safeEl("areasTable").querySelector("tbody");
-  tbody.innerHTML = "";
-
-  // Summer nederst
-  let sumNon = 0;
-  let sumGrs = 0;
-  let sumCap = 0;
-
-  for (let code = 1; code <= 13; code++) {
-    const status = statusByCode.get(code) || null;
-
-    const nonGrs = Number(areaPermitCountNonGrs.get(code) || 0);
-    const grs    = Number(areaPermitCountGrs.get(code) || 0);
-
-    const capTN  = Number(areaCapacityTN.get(code) || 0);
-    const capText = capTN > 0
-      ? `${Math.round(capTN).toLocaleString("nb-NO")} TN`
-      : "—";
-
-    sumNon += nonGrs;
-    sumGrs += grs;
-    sumCap += capTN;
-
-    const tr = document.createElement("tr");
-    tr.dataset.areaCode = String(code);
-    tr.innerHTML = `
-      <td>
-        <button class="expander-btn" type="button" aria-label="Vis detaljer" aria-expanded="false">
-          <span class="chev">▶</span>
-        </button>
-      </td>
-      <td>
-        ${trafficHtml(code, status)}
-        <span class="muted" style="margin-left:6px">${escapeHtml(PRODUCTION_AREA_NAMES[code] || "")}</span>
-      </td>
-      <td>${escapeHtml(
-        status === "GREEN" ? "Grønn" :
-        status === "YELLOW" ? "Gul" :
-        status === "RED" ? "Rød" : "Ukjent"
-      )}</td>
-      <td style="text-align:right">${escapeHtml(nonGrs.toLocaleString("nb-NO"))}</td>
-      <td style="text-align:right">${escapeHtml(grs.toLocaleString("nb-NO"))}</td>
-      <td style="text-align:right">${escapeHtml(capText)}</td>
-    `;
-    tbody.appendChild(tr);
-
-    const detailsTr = document.createElement("tr");
-    detailsTr.className = "details-row hidden";
-    detailsTr.dataset.detailsFor = String(code);
-    detailsTr.innerHTML = `
-      <td colspan="6">
-        <div class="details-box">
-          <div class="muted" style="margin-bottom:8px">Klikk pilen for å se selskaper…</div>
-        </div>
-      </td>
-    `;
-    tbody.appendChild(detailsTr);
-  }
-
-  // --- Sumrad nederst ---
-  const sumCapText = sumCap > 0
-    ? `${Math.round(sumCap).toLocaleString("nb-NO")} TN`
-    : "—";
-
-  const sumTr = document.createElement("tr");
-  sumTr.innerHTML = `
-    <td></td>
-    <td style="font-weight:700">Sum</td>
-    <td></td>
-    <td style="text-align:right;font-weight:700">${escapeHtml(sumNon.toLocaleString("nb-NO"))}</td>
-    <td style="text-align:right;font-weight:700">${escapeHtml(sumGrs.toLocaleString("nb-NO"))}</td>
-    <td style="text-align:right;font-weight:700">${escapeHtml(sumCapText)}</td>
-  `;
-  tbody.appendChild(sumTr);
-
-  // Klikk-håndtering (delegert)
-  tbody.onclick = (e) => {
-    const btn = e.target.closest(".expander-btn");
-    if (!btn) return;
-
-    const row = e.target.closest("tr");
-    if (!row) return;
-
-    const code = Number(row.dataset.areaCode);
-    if (!code) return; // sumrad har ingen areaCode
-
-    const detailsRow = tbody.querySelector(`tr.details-row[data-details-for="${code}"]`);
-    if (!detailsRow) return;
-
-    const isOpen = !detailsRow.classList.contains("hidden");
-
-    detailsRow.classList.toggle("hidden", isOpen);
-    row.classList.toggle("is-open", !isOpen);
-    btn.setAttribute("aria-expanded", String(!isOpen));
-
-    if (!isOpen) {
-      const box = detailsRow.querySelector(".details-box");
-      if (!box) return;
-
-      const ownersMap = areaOwnersIndex.get(code) || new Map();
-      const owners = Array.from(ownersMap.values())
-        .sort((a, b) => (b.count - a.count) || String(a.owner_name).localeCompare(String(b.owner_name), "nb", { sensitivity: "base" }));
-
-      if (owners.length === 0) {
-        box.innerHTML = `<div class="details-empty">Ingen aktive tillatelser funnet i dette området.</div>`;
-        return;
-      }
-
-      box.innerHTML = `
-        <div class="details-grid">
-          ${owners.map(o => {
-            const name = escapeHtml(o.owner_name || "(ukjent)");
-            const ident = String(o.owner_identity ?? "").trim();
-            const left = ident
-              ? `<a class="link" href="#/owner/${encodeURIComponent(ident)}">${name}</a> <span class="muted-small">(${escapeHtml(ident)})</span>`
-              : `${name}`;
-            return `
-              <div class="details-item">
-                <div>${left}</div>
-                <div class="details-count">${escapeHtml(String(o.count))}</div>
-              </div>
-            `;
-          }).join("")}
-        </div>
-      `;
-    }
-  };
 }
 
 function renderRoute() {
@@ -2603,9 +2163,9 @@ function renderRoute() {
   renderNow();
 }
 
-
-
-// --- events ---
+// -------------------------------
+// events
+// -------------------------------
 function wireEvents() {
   window.addEventListener("hashchange", () => renderRoute());
 
@@ -2721,7 +2281,6 @@ function wireEvents() {
     }
   });
 
-  // Re-render owner view når checkbox endres (grunnrente filter)
   const ownerOnly = $("ownerOnlyGrunnrente");
   if (ownerOnly) {
     ownerOnly.addEventListener("change", () => {
@@ -2729,44 +2288,47 @@ function wireEvents() {
       if (r.view === "owner") renderOwner(r.ident);
     });
   }
-}
 
-const changesYear = $("changesYear");
-if (changesYear) {
-  changesYear.addEventListener("change", () => {
-    const r = parseHash();
-    if (r.view === "changes") renderChanges();
-  });
-}
+  // CHANGES year dropdown
+  const changesYear = $("changesYear");
+  if (changesYear) {
+    changesYear.addEventListener("change", () => {
+      const r = parseHash();
+      if (r.view === "changes") renderChanges();
+    });
+  }
 
+  // HISTORY: re-render ved søk/checkbox
+  const historyOnly = $("historyOnlyGrunnrente");
+  if (historyOnly) {
+    historyOnly.addEventListener("change", () => {
+      const r = parseHash();
+      if (r.view === "history") renderHistory();
+    });
+  }
+
+  const historySearch = $("historySearch");
+  if (historySearch) {
+    let t = null;
+    historySearch.addEventListener("input", () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const r = parseHash();
+        if (r.view === "history") renderHistory();
+      }, 80);
+    });
+  }
+}
 
 function showError(err) {
   console.error(err);
   setStatus("Feil ved lasting", "bad");
   setMeta(String(err?.message || err));
 }
-// HISTORY: re-render ved søk/checkbox
-const historyOnly = $("historyOnlyGrunnrente");
-if (historyOnly) {
-  historyOnly.addEventListener("change", () => {
-    const r = parseHash();
-    if (r.view === "history") renderHistory();
-  });
-}
 
-const historySearch = $("historySearch");
-if (historySearch) {
-  let t = null;
-  historySearch.addEventListener("input", () => {
-    clearTimeout(t);
-    t = setTimeout(() => {
-      const r = parseHash();
-      if (r.view === "history") renderHistory();
-    }, 80);
-  });
-}
-
-// --- main ---
+// -------------------------------
+// main
+// -------------------------------
 (async function main() {
   try {
     wireEvents();
