@@ -1738,47 +1738,81 @@ console.log("ownership_history rows:", hist.length, "for", permitKey);
     });
   }
 
-  // --- NY: Transaksjonshistorikk basert på license_original_owner + license_transfers ---
+  
+// --- NY: Transaksjonshistorikk basert på license_original_owner + license_transfers ---
 const tb = safeEl("permitOwnershipTimeline").querySelector("tbody");
 tb.innerHTML = "";
 
+function dayBefore(isoDate) {
+  const d = iso10(isoDate);
+  if (!d) return "";
+  // Bruk UTC for å unngå rare DST-ting
+  const dt = new Date(d + "T00:00:00Z");
+  dt.setUTCDate(dt.getUTCDate() - 1);
+  return dt.toISOString().slice(0, 10);
+}
+
 const original = getOriginalOwnerForPermit(permitKey);
-const transfers = getTransferEventsForPermit(permitKey);
+const transfers = getTransferEventsForPermit(permitKey); // sortert ASC i din funksjon
 
-// Vi viser "ny eier etter dato" (to_*)
-const rows = [];
+// Bygg kronologisk liste (eldst -> nyest)
+const events = [];
 
-// opprinnelig nederst
+// Opprinnelig eier (har ikke "transaksjonsdato" i datasettet)
 if (original) {
-  rows.push({
-    dateText: "Opprinnelig",
+  events.push({
+    from: "Opprinnelig", // eller "" hvis du vil ha tom
     name: original.name || "—",
     ident: original.ident || ""
   });
 }
 
-// transfers: hver rad representerer ny innehaver etter dato
+// Hver transfer representerer "ny innehaver gjelder fra event_date"
 for (const t of transfers) {
-  rows.push({
-    dateText: t.event_date || "—",
+  events.push({
+    from: iso10(t.event_date) || "—",
     name: t.to_name || "—",
     ident: t.to_ident || ""
   });
 }
 
-// Nyest øverst (opprinnelig nederst)
-rows.reverse();
+// Beregn "Gjelder til":
+// - For siste rad: Aktiv
+// - For tidligere rader: dagen før neste "from"-dato (hvis neste har dato)
+for (let i = 0; i < events.length; i++) {
+  const next = events[i + 1] || null;
 
-for (const r of rows) {
+  if (!next) {
+    events[i].to = "Aktiv";
+  } else {
+    // Hvis neste.from er en dato (YYYY-MM-DD), bruk dagen før
+    const nextFromIso = iso10(next.from);
+    events[i].to = nextFromIso ? dayBefore(nextFromIso) : "—";
+  }
+}
+
+// Vis nyest øverst
+events.reverse();
+
+for (const r of events) {
   const ident = String(r.ident ?? "").trim();
+
+  // "Gjelder fra": hvis dato, vis som dato; ellers tekst (Opprinnelig/—)
+  const fromText = iso10(r.from) ? iso10(r.from) : String(r.from || "—");
+
+  // "Gjelder til": hvis dato, vis som dato; ellers Aktiv/—
+  const toText = iso10(r.to) ? iso10(r.to) : String(r.to || "—");
+
   const tr = document.createElement("tr");
   tr.innerHTML = `
-    <td>${escapeHtml(r.dateText)}</td>
+    <td>${escapeHtml(fromText)}</td>
+    <td>${escapeHtml(toText === "Aktiv" ? "Aktiv" : toText)}</td>
     <td>${escapeHtml(r.name)}</td>
     <td>${ident ? `<a class="link" href="#/owner/${encodeURIComponent(ident)}">${escapeHtml(ident)}</a>` : "—"}</td>
   `;
   tb.appendChild(tr);
 }
+
 
   
 
