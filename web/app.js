@@ -882,9 +882,10 @@ const yearsHtml =
             Historikk før 2025 er beregnet ut fra opplysninger om overføringer hentet fra Akvakulturregisteret.
           </div>
         </div>
-
+      </div>
     `
     : "";
+
 
 
   card.innerHTML = `
