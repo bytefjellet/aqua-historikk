@@ -614,20 +614,21 @@ function listSnapshotDatesDesc() {
   return rows.map(r => iso10(r.snapshot_date)).filter(Boolean);
 }
 
+
 function renderChanges() {
   setActiveTab("tab-changes");
   showView("view-changes");
 
-  const sel = safeEl("changesDate");
+  const sel = safeEl("changesYear");
   const meta = safeEl("changesMeta");
   const startedBody = safeEl("changesStartedTable").querySelector("tbody");
   const stoppedBody = safeEl("changesStoppedTable").querySelector("tbody");
   const startedEmpty = safeEl("changesStartedEmpty");
   const stoppedEmpty = safeEl("changesStoppedEmpty");
 
-  const dates = listSnapshotDatesDesc();
-  if (dates.length === 0) {
-    meta.textContent = "Ingen snapshot-datoer funnet.";
+  const years = listSnapshotYearsDesc(2026);
+  if (years.length === 0) {
+    meta.textContent = "Ingen snapshot-år funnet (fra og med 2026).";
     sel.innerHTML = "";
     startedBody.innerHTML = "";
     stoppedBody.innerHTML = "";
@@ -636,49 +637,26 @@ function renderChanges() {
     return;
   }
 
-  // Fyll dropdown én gang (hvis tom)
+  // Fyll dropdown én gang
   if (!sel.options.length) {
-    sel.innerHTML = dates
-      .map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`)
-      .join("");
-    sel.value = dates[0]; // nyeste
+    sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join("");
+    sel.value = String(years[0]); // nyeste år
   }
 
-  const d2 = iso10(sel.value) || dates[0];
-  const idx = dates.indexOf(d2);
-  const d1 = (idx >= 0 && idx + 1 < dates.length) ? dates[idx + 1] : null;
+  const year = Number(sel.value) || years[0];
 
-  meta.textContent = d1
-    ? `Viser endringer fra ${formatNorwegianDate(d1)} → ${formatNorwegianDate(d2)}`
-    : `Viser ${formatNorwegianDate(d2)} (ingen tidligere dato funnet)`;
+  const { started, stopped, dates } = computeGrunnrenteYearEvents(year);
 
-  // Forutsetter at computeGrunnrenteChanges(d1,d2) returnerer r.permitsBefore / r.permitsAfter / r.added / r.removed
-  const { started, stopped } = computeGrunnrenteChanges(d1, d2);
-
-  function permitsListHtml(title, permits, pillClass = "pill--yellow") {
-    const list = permits || [];
-    if (!list.length) {
-      return `<div class="muted-small">${escapeHtml(title)}: —</div>`;
-    }
-    return `
-      <div>
-        <div class="muted-small" style="margin-bottom:6px">${escapeHtml(title)} (${list.length})</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px">
-          ${list.map(p => `<a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(p))}"><span class="pill ${pillClass}">${escapeHtml(p)}</span></a>`).join("")}
-        </div>
-      </div>
-    `;
-  }
-
-  function renderChangeDetailsBox(r, mode /* "started" | "stopped" */) {
-  const added = r.added || [];
-  const removed = r.removed || [];
+  meta.textContent =
+    `Viser alle endringer i grunnrenteplikt i ${year}. ` +
+    `(Starter: ${started.length}, Slutter: ${stopped.length}, snapshot-dager i året: ${dates.length})`;
 
   function permitChipsHtml(permits, pillClass) {
-    if (!permits.length) return `<div class="muted-small">—</div>`;
+    const list = permits || [];
+    if (!list.length) return `<div class="muted-small">—</div>`;
     return `
       <div style="display:flex;flex-wrap:wrap;gap:6px">
-        ${permits.map(p =>
+        ${list.map(p =>
           `<a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(p))}">
             <span class="pill ${pillClass}">${escapeHtml(p)}</span>
           </a>`
@@ -687,34 +665,29 @@ function renderChanges() {
     `;
   }
 
-  if (mode === "started") {
-    // Kun én relevant liste: hva som er lagt til (blå)
-    return `
-      <div class="details-box">
-        <div>
-          <div class="muted-small" style="margin-bottom:6px">
-            Har blitt innehaver av (${added.length}):
-          </div>
+  function renderChangeDetailsBox(r, mode /* started|stopped */) {
+    const dateLine = r.eventDate ? `<div class="muted-small" style="margin-bottom:8px">Dato: ${escapeHtml(formatNorwegianDate(r.eventDate))}</div>` : "";
+
+    if (mode === "started") {
+      const added = r.added || [];
+      return `
+        <div class="details-box">
+          ${dateLine}
+          <div class="muted-small" style="margin-bottom:6px">Har blitt innehaver av (${added.length}):</div>
           ${permitChipsHtml(added, "pill--blue")}
         </div>
-      </div>
-    `;
-  }
-
-  // stopped: kun én relevant liste: hva som er fjernet (rød)
-  return `
-    <div class="details-box">
-      <div>
-        <div class="muted-small" style="margin-bottom:6px">
-          Ikke lenger innehaver av (${removed.length}):
+      `;
+    } else {
+      const removed = r.removed || [];
+      return `
+        <div class="details-box">
+          ${dateLine}
+          <div class="muted-small" style="margin-bottom:6px">Ikke lenger innehaver av (${removed.length}):</div>
+          ${permitChipsHtml(removed, "pill--red")}
         </div>
-        ${permitChipsHtml(removed, "pill--red")}
-      </div>
-    </div>
-  `;
-}
-
-
+      `;
+    }
+  }
 
   function wireChangesExpanders(tbodyEl) {
     tbodyEl.onclick = (e) => {
@@ -724,10 +697,10 @@ function renderChanges() {
       const row = e.target.closest("tr");
       if (!row) return;
 
-      const orgnr = row.dataset.orgnr;
-      if (!orgnr) return;
+      const key = row.dataset.key;
+      if (!key) return;
 
-      const detailsRow = tbodyEl.querySelector(`tr.details-row[data-details-for="${orgnr}"]`);
+      const detailsRow = tbodyEl.querySelector(`tr.details-row[data-details-for="${key}"]`);
       if (!detailsRow) return;
 
       const isOpen = !detailsRow.classList.contains("hidden");
@@ -737,15 +710,16 @@ function renderChanges() {
     };
   }
 
-  // --- render started (med expander) ---
+  // --- render started ---
   startedBody.innerHTML = "";
   if (started.length === 0) {
-    startedEmpty.textContent = "Ingen nye innehavere startet grunnrenteplikt i denne perioden.";
+    startedEmpty.textContent = `Ingen innehavere startet grunnrenteplikt i ${year}.`;
   } else {
     startedEmpty.textContent = "";
     for (const r of started) {
+      const key = `${r.orgnr}__${r.eventDate}`;
       const tr = document.createElement("tr");
-      tr.dataset.orgnr = String(r.orgnr);
+      tr.dataset.key = key;
 
       tr.innerHTML = `
         <td>
@@ -761,25 +735,22 @@ function renderChanges() {
 
       const detailsTr = document.createElement("tr");
       detailsTr.className = "details-row hidden";
-      detailsTr.dataset.detailsFor = String(r.orgnr);
-      detailsTr.innerHTML = `
-        <td colspan="4">
-          ${renderChangeDetailsBox(r, "started")}
-        </td>
-      `;
+      detailsTr.dataset.detailsFor = key;
+      detailsTr.innerHTML = `<td colspan="4">${renderChangeDetailsBox(r, "started")}</td>`;
       startedBody.appendChild(detailsTr);
     }
   }
 
-  // --- render stopped (med expander) ---
+  // --- render stopped ---
   stoppedBody.innerHTML = "";
   if (stopped.length === 0) {
-    stoppedEmpty.textContent = "Ingen innehavere sluttet å være grunnrentepliktige i denne perioden.";
+    stoppedEmpty.textContent = `Ingen innehavere sluttet grunnrenteplikt i ${year}.`;
   } else {
     stoppedEmpty.textContent = "";
     for (const r of stopped) {
+      const key = `${r.orgnr}__${r.eventDate}`;
       const tr = document.createElement("tr");
-      tr.dataset.orgnr = String(r.orgnr);
+      tr.dataset.key = key;
 
       tr.innerHTML = `
         <td>
@@ -795,21 +766,137 @@ function renderChanges() {
 
       const detailsTr = document.createElement("tr");
       detailsTr.className = "details-row hidden";
-      detailsTr.dataset.detailsFor = String(r.orgnr);
-      detailsTr.innerHTML = `
-        <td colspan="4">
-          ${renderChangeDetailsBox(r, "stopped")}
-        </td>
-      `;
+      detailsTr.dataset.detailsFor = key;
+      detailsTr.innerHTML = `<td colspan="4">${renderChangeDetailsBox(r, "stopped")}</td>`;
       stoppedBody.appendChild(detailsTr);
     }
   }
 
-  // Delegert klikk for expanders (én per tabell)
   wireChangesExpanders(startedBody);
   wireChangesExpanders(stoppedBody);
 }
 
+
+
+function listSnapshotYearsDesc(fromYear = 2026) {
+  const rows = execAll(`
+    SELECT DISTINCT substr(snapshot_date, 1, 4) AS y
+    FROM snapshots
+    WHERE snapshot_date IS NOT NULL AND TRIM(snapshot_date) <> ''
+      AND CAST(substr(snapshot_date, 1, 4) AS INTEGER) >= ?
+    ORDER BY y DESC;
+  `, [fromYear]);
+
+  return rows.map(r => Number(r.y)).filter(Boolean);
+}
+
+function computeGrunnrenteYearEvents(year) {
+  const y = Number(year);
+  if (!Number.isFinite(y)) return { started: [], stopped: [], dates: [] };
+
+  const from = `${y}-01-01`;
+  const to = `${y}-12-31`;
+
+  // Hent alle grunnrentepliktige snapshot-rader i året (kun de vi trenger)
+  const rows = execAll(`
+    SELECT snapshot_date, permit_key, row_json
+    FROM permit_snapshot
+    WHERE grunnrente_pliktig = 1
+      AND date(snapshot_date) BETWEEN date(?) AND date(?)
+    ORDER BY date(snapshot_date) ASC;
+  `, [from, to]);
+
+  // date -> Map(orgnr -> { name, permits[] })
+  const byDate = new Map();
+
+  for (const r of rows) {
+    const d = iso10(r.snapshot_date);
+    if (!d) continue;
+
+    const orgnr = extractOwnerOrgnrFromRowJson(r.row_json);
+    if (!orgnr) continue;
+
+    const name = extractOwnerNameFromRowJson(r.row_json);
+    const permit = String(r.permit_key ?? "").trim();
+    if (!permit) continue;
+
+    if (!byDate.has(d)) byDate.set(d, new Map());
+    const m = byDate.get(d);
+
+    if (!m.has(orgnr)) m.set(orgnr, { orgnr, name: name || "", permits: [] });
+    const obj = m.get(orgnr);
+
+    obj.permits.push(permit);
+    if (!obj.name && name) obj.name = name;
+  }
+
+  const dates = Array.from(byDate.keys()).sort((a, b) => a.localeCompare(b));
+
+  function uniqSorted(arr) {
+    return Array.from(new Set((arr || []).map(x => String(x || "").trim()).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b, "nb", { numeric: true, sensitivity: "base" }));
+  }
+
+  const started = [];
+  const stopped = [];
+
+  let prev = new Map(); // orgnr -> {name, permits[]}
+
+  for (const d of dates) {
+    const curr = byDate.get(d) || new Map();
+
+    const all = new Set([...prev.keys(), ...curr.keys()]);
+    for (const orgnr of all) {
+      const a = prev.get(orgnr);
+      const b = curr.get(orgnr);
+
+      const permitsBefore = uniqSorted(a?.permits || []);
+      const permitsAfter  = uniqSorted(b?.permits || []);
+
+      const beforeCnt = permitsBefore.length;
+      const afterCnt  = permitsAfter.length;
+
+      if (beforeCnt === 0 && afterCnt > 0) {
+        started.push({
+          eventDate: d,
+          orgnr,
+          name: b?.name || a?.name || "",
+          beforeCnt,
+          afterCnt,
+          // for expander
+          added: permitsAfter,
+        });
+      } else if (beforeCnt > 0 && afterCnt === 0) {
+        stopped.push({
+          eventDate: d,
+          orgnr,
+          name: a?.name || b?.name || "",
+          beforeCnt,
+          afterCnt,
+          // for expander
+          removed: permitsBefore,
+        });
+      }
+    }
+
+    prev = curr;
+  }
+
+  // sortering: primært alfabetisk på navn/orgnr, sekundært dato (for stabilitet)
+  started.sort((x, y) =>
+    (String(x.name).localeCompare(String(y.name), "nb", { sensitivity: "base" })) ||
+    x.orgnr.localeCompare(y.orgnr) ||
+    x.eventDate.localeCompare(y.eventDate)
+  );
+
+  stopped.sort((x, y) =>
+    (String(x.name).localeCompare(String(y.name), "nb", { sensitivity: "base" })) ||
+    x.orgnr.localeCompare(y.orgnr) ||
+    x.eventDate.localeCompare(y.eventDate)
+  );
+
+  return { started, stopped, dates };
+}
 
 // -------------------------------
 // NYTT: pill-regler (aktive)
@@ -2389,13 +2476,14 @@ function wireEvents() {
   }
 }
 
-const changesDate = $("changesDate");
-if (changesDate) {
-  changesDate.addEventListener("change", () => {
+const changesYear = $("changesYear");
+if (changesYear) {
+  changesYear.addEventListener("change", () => {
     const r = parseHash();
     if (r.view === "changes") renderChanges();
   });
 }
+
 
 function showError(err) {
   console.error(err);
