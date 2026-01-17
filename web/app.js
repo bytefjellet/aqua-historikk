@@ -65,6 +65,16 @@ function setActiveTab(tabId) {
   }
 }
 
+function pickCol(table, candidates) {
+  for (const c of candidates) {
+    if (hasColumn(table, c)) return c;
+  }
+  return null;
+}
+
+function normPermitForSql(s) {
+  return String(s ?? "").trim().toUpperCase();
+}
 
 
 function showView(viewId) {
@@ -128,6 +138,84 @@ function getProductionAreaInfo(prodAreaRaw) {
     name: PRODUCTION_AREA_NAMES[code] || "",
     status: normTrafficStatus(row?.prod_area_status)
   };
+}
+
+function getTransferEventsForPermit(permitKey) {
+  const key = normPermitForSql(permitKey);
+
+  const t = "license_transfers";
+
+  // permit-kolonne
+  const permitCol = pickCol(t, ["permit_key", "license_key", "tillatelse", "permit"]);
+  if (!permitCol) {
+    console.warn("Fant ikke permit-kolonne i license_transfers");
+    return [];
+  }
+
+  // dato-kolonne (velg den som finnes)
+  const dateCol = pickCol(t, ["transfer_date", "date", "event_date", "snapshot_date", "valid_from", "dato"]);
+  if (!dateCol) {
+    console.warn("Fant ikke dato-kolonne i license_transfers");
+  }
+
+  // fra/til (velg beste match)
+  const fromNameCol  = pickCol(t, ["from_owner_name", "seller_name", "old_owner_name", "from_name"]);
+  const fromIdentCol = pickCol(t, ["from_owner_identity", "seller_orgnr", "seller_identity", "old_owner_identity", "from_identity"]);
+
+  const toNameCol  = pickCol(t, ["to_owner_name", "buyer_name", "new_owner_name", "to_name"]);
+  const toIdentCol = pickCol(t, ["to_owner_identity", "buyer_orgnr", "buyer_identity", "new_owner_identity", "to_identity"]);
+
+  // fallback hvis tabellen bare har “ny eier”
+  const ownerNameCol  = toNameCol  || pickCol(t, ["owner_name", "new_owner", "innehaver_navn"]);
+  const ownerIdentCol = toIdentCol || pickCol(t, ["owner_identity", "owner_orgnr", "orgnr", "innehaver_orgnr"]);
+
+  const selectCols = [
+    dateCol ? `${dateCol} AS event_date` : `NULL AS event_date`,
+    fromNameCol ? `${fromNameCol} AS from_name` : `NULL AS from_name`,
+    fromIdentCol ? `${fromIdentCol} AS from_ident` : `NULL AS from_ident`,
+    ownerNameCol ? `${ownerNameCol} AS to_name` : `NULL AS to_name`,
+    ownerIdentCol ? `${ownerIdentCol} AS to_ident` : `NULL AS to_ident`,
+  ].join(", ");
+
+  const orderBy = dateCol ? `ORDER BY date(${dateCol}) ASC` : "";
+
+  const rows = execAll(`
+    SELECT ${selectCols}
+    FROM ${t}
+    WHERE UPPER(TRIM(${permitCol})) = UPPER(TRIM(?))
+    ${orderBy};
+  `, [key]);
+
+  // normaliser
+  return rows.map(r => ({
+    event_date: iso10(r.event_date) || "",
+    from_name: String(r.from_name ?? "").trim(),
+    from_ident: String(r.from_ident ?? "").trim(),
+    to_name: String(r.to_name ?? "").trim(),
+    to_ident: String(r.to_ident ?? "").trim(),
+  }));
+}
+
+function getOriginalOwnerForPermit(permitKey) {
+  const key = normPermitForSql(permitKey);
+
+  // juster hvis dine kolonnenavn er annerledes (men du sa permit_key er PK her)
+  const row = one(`
+    SELECT
+      owner_name AS owner_name,
+      owner_orgnr AS owner_orgnr,
+      owner_identity AS owner_identity
+    FROM license_original_owner
+    WHERE UPPER(TRIM(permit_key)) = UPPER(TRIM(?))
+    LIMIT 1;
+  `, [key]);
+
+  if (!row) return null;
+
+  const name = String(row.owner_name ?? "").trim();
+  const ident = String(row.owner_orgnr ?? row.owner_identity ?? "").trim();
+
+  return { name, ident };
 }
 
 
@@ -1096,34 +1184,65 @@ console.log("ownership_history rows:", hist.length, "for", permitKey);
     });
   }
 
-  // Render eierskapstimeline: nyest øverst, opprinnelig nederst
-  const tbody = safeEl("permitOwnershipTimeline").querySelector("tbody");
-  tbody.innerHTML = "";
+  // --- NY: Transaksjonshistorikk basert på license_original_owner + license_transfers ---
+  const tb = safeEl("permitOwnershipTimeline").querySelector("tbody");
+  tb.innerHTML = "";
 
-  // hist er eldste → nyeste, vi vil vise motsatt
-  const timelineRows = [...hist].reverse();
+  const original = getOriginalOwnerForPermit(permitKey);
+  const transfers = getTransferEventsForPermit(permitKey);
 
-  for (const r of timelineRows) {
-    const vf = displayDate(r.valid_from);
-    const vt =
-      (r.valid_to_label === "Aktiv" || !iso10(r.valid_to))
-        ? "Aktiv"
-        : displayDate(r.valid_to_label);
+  // Bygg event-liste (eldst -> nyest)
+  const events = [];
 
-    const ident = String(r.owner_identity ?? "").trim();
-
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${escapeHtml(vf)}</td>
-      <td>${escapeHtml(vt)}</td>
-      <td>${escapeHtml(r.owner_name || "—")}</td>
-      <td>${ident
-        ? `<a class="link" href="#/owner/${encodeURIComponent(ident)}">${escapeHtml(ident)}</a>`
-        : "—"}
-      </td>
-    `;
-    tbody.appendChild(tr);
+  // Opprinnelig innehaver som startpunkt
+  if (original) {
+    events.push({
+      date: "",
+      from_name: "",
+      from_ident: "",
+      to_name: original.name,
+      to_ident: original.ident,
+      kind: "original"
+    });
   }
+
+  // Transfers
+  for (const t of transfers) {
+    events.push({
+      date: t.event_date || "",
+      from_name: t.from_name,
+      from_ident: t.from_ident,
+      to_name: t.to_name,
+      to_ident: t.to_ident,
+      kind: "transfer"
+    });
+  }
+
+  // Vis nyest øverst
+  const display = [...events].reverse();
+
+  for (const e of display) {
+    const tr = document.createElement("tr");
+
+    const dateText =
+      e.kind === "original" ? "Opprinnelig" : (e.date || "—");
+
+    const fromIdent = String(e.from_ident ?? "").trim();
+    const toIdent = String(e.to_ident ?? "").trim();
+
+    tr.innerHTML = `
+      <td>${escapeHtml(dateText)}</td>
+      <td>${escapeHtml(e.from_name || (e.kind === "original" ? "" : "—"))}</td>
+      <td>${fromIdent ? escapeHtml(fromIdent) : (e.kind === "original" ? "" : "—")}</td>
+      <td>${escapeHtml(e.to_name || "—")}</td>
+      <td>${
+        toIdent
+          ? `<a class="link" href="#/owner/${encodeURIComponent(toIdent)}">${escapeHtml(toIdent)}</a>`
+          : "—"
+      }</td>
+    `;
+    tb.appendChild(tr);
+    }
 
 }
 
