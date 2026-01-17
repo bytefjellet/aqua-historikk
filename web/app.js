@@ -1291,7 +1291,22 @@ const grunnrenteCapacityTN = active.reduce(
       <td>${escapeHtml(formal)}</td>
       <td>${escapeHtml(produksjonsform)}</td>
       <td>${escapeHtml(kapasitet)}</td>
-      <td>${escapeHtml(prodOmr || "N/A")}</td>
+      <td>
+  ${
+    prodOmr
+      ? (() => {
+          const info = getProductionAreaInfo(prodOmr);
+          return `
+            ${trafficHtml(info.code, info.status)}
+            ${info.name
+              ? `<div class="muted-small">${escapeHtml(info.name)}</div>`
+              : ""}
+          `;
+        })()
+      : "N/A"
+  }
+</td>
+
     `;
     activeBody.appendChild(tr);
   }
