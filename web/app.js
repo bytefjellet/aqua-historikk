@@ -670,33 +670,45 @@ function renderChanges() {
     `;
   }
 
-  function renderChangeDetailsBox(r) {
-    const added = r.added || [];
-    const removed = r.removed || [];
+  function renderChangeDetailsBox(r, mode /* "started" | "stopped" */) {
+  const before = r.permitsBefore || [];
+  const after = r.permitsAfter || [];
+  const added = r.added || [];
+  const removed = r.removed || [];
 
+  // Gjenbruker pill-lister
+  function permitsListHtml(title, permits, pillClass = "pill--yellow") {
+    const list = permits || [];
+    if (!list.length) return "";
+    return `
+      <div>
+        <div class="muted-small" style="margin-bottom:6px">${escapeHtml(title)}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${list.map(p =>
+            `<a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(p))}">
+              <span class="pill ${pillClass}">${escapeHtml(p)}</span>
+            </a>`
+          ).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  if (mode === "started") {
+    // Starter: vis kun Etter + Lagt til
     return `
       <div class="details-box">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-          ${permitsListHtml("Før", r.permitsBefore, "pill--yellow")}
-          ${permitsListHtml("Etter", r.permitsAfter, "pill--yellow")}
-        </div>
-
-        <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          ${permitsListHtml(`Har blitt innehaver av (${after.length}):`, after, "pill--yellow")}
           <div>
             <div class="muted-small" style="margin-bottom:6px">Lagt til (${added.length})</div>
             ${added.length
               ? `<div style="display:flex;flex-wrap:wrap;gap:6px">
-                   ${added.map(p => `<a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(p))}"><span class="pill pill--blue">${escapeHtml(p)}</span></a>`).join("")}
-                 </div>`
-              : `<div class="muted-small">—</div>`
-            }
-          </div>
-
-          <div>
-            <div class="muted-small" style="margin-bottom:6px">Fjernet (${removed.length})</div>
-            ${removed.length
-              ? `<div style="display:flex;flex-wrap:wrap;gap:6px">
-                   ${removed.map(p => `<a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(p))}"><span class="pill pill--red">${escapeHtml(p)}</span></a>`).join("")}
+                   ${added.map(p =>
+                     `<a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(p))}">
+                       <span class="pill pill--blue">${escapeHtml(p)}</span>
+                     </a>`
+                   ).join("")}
                  </div>`
               : `<div class="muted-small">—</div>`
             }
@@ -705,6 +717,30 @@ function renderChanges() {
       </div>
     `;
   }
+
+  // stopped
+  return `
+    <div class="details-box">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        ${permitsListHtml(`Var innehaver av (${before.length}):`, before, "pill--yellow")}
+        <div>
+          <div class="muted-small" style="margin-bottom:6px">Ikke lenger innehaver av (${removed.length}):</div>
+          ${removed.length
+            ? `<div style="display:flex;flex-wrap:wrap;gap:6px">
+                 ${removed.map(p =>
+                   `<a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(p))}">
+                     <span class="pill pill--red">${escapeHtml(p)}</span>
+                   </a>`
+                 ).join("")}
+               </div>`
+            : `<div class="muted-small">—</div>`
+          }
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 
   function wireChangesExpanders(tbodyEl) {
     tbodyEl.onclick = (e) => {
@@ -754,7 +790,7 @@ function renderChanges() {
       detailsTr.dataset.detailsFor = String(r.orgnr);
       detailsTr.innerHTML = `
         <td colspan="4">
-          ${renderChangeDetailsBox(r)}
+          ${renderChangeDetailsBox(r, "started")}
         </td>
       `;
       startedBody.appendChild(detailsTr);
@@ -788,7 +824,7 @@ function renderChanges() {
       detailsTr.dataset.detailsFor = String(r.orgnr);
       detailsTr.innerHTML = `
         <td colspan="4">
-          ${renderChangeDetailsBox(r)}
+          ${renderChangeDetailsBox(r, "stopped")}
         </td>
       `;
       stoppedBody.appendChild(detailsTr);
