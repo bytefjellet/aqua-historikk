@@ -671,75 +671,49 @@ function renderChanges() {
   }
 
   function renderChangeDetailsBox(r, mode /* "started" | "stopped" */) {
-  const before = r.permitsBefore || [];
-  const after = r.permitsAfter || [];
   const added = r.added || [];
   const removed = r.removed || [];
 
-  // Gjenbruker pill-lister
-  function permitsListHtml(title, permits, pillClass = "pill--yellow") {
-    const list = permits || [];
-    if (!list.length) return "";
+  function permitChipsHtml(permits, pillClass) {
+    if (!permits.length) return `<div class="muted-small">—</div>`;
     return `
-      <div>
-        <div class="muted-small" style="margin-bottom:6px">${escapeHtml(title)}</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px">
-          ${list.map(p =>
-            `<a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(p))}">
-              <span class="pill ${pillClass}">${escapeHtml(p)}</span>
-            </a>`
-          ).join("")}
-        </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${permits.map(p =>
+          `<a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(p))}">
+            <span class="pill ${pillClass}">${escapeHtml(p)}</span>
+          </a>`
+        ).join("")}
       </div>
     `;
   }
 
   if (mode === "started") {
-    // Starter: vis kun Etter + Lagt til
+    // Kun én relevant liste: hva som er lagt til (blå)
     return `
       <div class="details-box">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-          ${permitsListHtml(`Har blitt innehaver av (${after.length}):`, after, "pill--yellow")}
-          <div>
-            <div class="muted-small" style="margin-bottom:6px">Lagt til (${added.length})</div>
-            ${added.length
-              ? `<div style="display:flex;flex-wrap:wrap;gap:6px">
-                   ${added.map(p =>
-                     `<a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(p))}">
-                       <span class="pill pill--blue">${escapeHtml(p)}</span>
-                     </a>`
-                   ).join("")}
-                 </div>`
-              : `<div class="muted-small">—</div>`
-            }
+        <div>
+          <div class="muted-small" style="margin-bottom:6px">
+            Har blitt innehaver av (${added.length}):
           </div>
+          ${permitChipsHtml(added, "pill--blue")}
         </div>
       </div>
     `;
   }
 
-  // stopped
+  // stopped: kun én relevant liste: hva som er fjernet (rød)
   return `
     <div class="details-box">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-        ${permitsListHtml(`Var innehaver av (${before.length}):`, before, "pill--yellow")}
-        <div>
-          <div class="muted-small" style="margin-bottom:6px">Ikke lenger innehaver av (${removed.length}):</div>
-          ${removed.length
-            ? `<div style="display:flex;flex-wrap:wrap;gap:6px">
-                 ${removed.map(p =>
-                   `<a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(p))}">
-                     <span class="pill pill--red">${escapeHtml(p)}</span>
-                   </a>`
-                 ).join("")}
-               </div>`
-            : `<div class="muted-small">—</div>`
-          }
+      <div>
+        <div class="muted-small" style="margin-bottom:6px">
+          Ikke lenger innehaver av (${removed.length}):
         </div>
+        ${permitChipsHtml(removed, "pill--red")}
       </div>
     </div>
   `;
 }
+
 
 
   function wireChangesExpanders(tbodyEl) {
