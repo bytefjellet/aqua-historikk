@@ -703,8 +703,9 @@ function renderChanges() {
       tr.innerHTML = `
         <td>${escapeHtml(r.name || "—")}</td>
         <td><a class="link" href="#/owner/${encodeURIComponent(r.orgnr)}">${escapeHtml(r.orgnr)}</a></td>
-        <td>${escapeHtml(String(r.afterCnt))}</td>
+        <td>${escapeHtml(`${r.beforeCnt} &rarr; ${r.afterCnt}`)}</td>
       `;
+
       startedBody.appendChild(tr);
     }
   }
@@ -720,8 +721,9 @@ function renderChanges() {
       tr.innerHTML = `
         <td>${escapeHtml(r.name || "—")}</td>
         <td><a class="link" href="#/owner/${encodeURIComponent(r.orgnr)}">${escapeHtml(r.orgnr)}</a></td>
-        <td>${escapeHtml(String(r.beforeCnt))}</td>
+        <td>${escapeHtml(`${r.beforeCnt} $ &rarr; {r.afterCnt}`)}</td>
       `;
+
       stoppedBody.appendChild(tr);
     }
   }
