@@ -58,7 +58,7 @@ function setMeta(text) {
 }
 
 function setActiveTab(tabId) {
-  for (const id of ["tab-now", "tab-permit", "tab-owner", "tab-history", "tab-areas"]) {
+  for (const id of ["tab-now", "tab-permit", "tab-owner", "tab-history", "tab-areas", "tab-changes"]) {
     const el = $(id);
     if (!el) continue;
     el.classList.toggle("active", id === tabId);
@@ -78,7 +78,7 @@ function normPermitForSql(s) {
 
 
 function showView(viewId) {
-  for (const id of ["view-now", "view-permit", "view-owner", "view-history", "view-areas"]) {
+  for (const id of ["view-now", "view-permit", "view-owner", "view-history", "view-areas", "view-changes"]) {
     const el = $(id);
     if (!el) continue;
     el.style.display = (id === viewId) ? "block" : "none";
@@ -442,6 +442,289 @@ function getOwnerStartDateForPermit(ownerOrgnr, permitKey) {
 }
 function scrollToTop() {
   window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+}
+
+function extractOwnerOrgnrFromRowJson(rowJsonText) {
+  const d = parseJsonSafe(rowJsonText);
+
+  // Prøv typiske nøkler (du kan justere etter ditt datasett)
+  const candidates = [
+    d["ORGNR"],
+    d["ORG_NR"],
+    d["ORGANISASJONSNUMMER"],
+    d["INNEHAVER_ORGNR"],
+    d["INNEHAVER_ORGNR."],
+    d["INNEHAVER_ORGANISASJONSNUMMER"],
+    d["EIER_ORGNR"],
+    d["OWNER_ORGNR"],
+    d["OWNER_IDENTITY"],
+  ];
+
+  for (const v of candidates) {
+    const s = String(v ?? "").trim().replace(/\s+/g, "");
+    if (/^[0-9]{9}$/.test(s)) return s;
+  }
+  return "";
+}
+
+function extractOwnerNameFromRowJson(rowJsonText) {
+  const d = parseJsonSafe(rowJsonText);
+
+  const candidates = [
+    d["INNEHAVER_NAVN"],
+    d["INNEHAVER"],
+    d["EIER_NAVN"],
+    d["OWNER_NAME"],
+    d["NAVN"],
+  ];
+
+  for (const v of candidates) {
+    const s = String(v ?? "").trim();
+    if (s) return s;
+  }
+  return "";
+}
+
+function getLatestAndPreviousSnapshotDates() {
+  const rows = execAll(`
+    SELECT snapshot_date
+    FROM snapshots
+    WHERE snapshot_date IS NOT NULL AND TRIM(snapshot_date) <> ''
+    ORDER BY date(snapshot_date) DESC;
+  `);
+
+  const d2 = rows[0]?.snapshot_date ? iso10(rows[0].snapshot_date) : null;
+  const d1 = rows[1]?.snapshot_date ? iso10(rows[1].snapshot_date) : null;
+
+  return { d1, d2 };
+}
+
+function buildGrunnrenteOwnerCountsForDate(snapshotDateIso10) {
+  const d = iso10(snapshotDateIso10);
+  if (!d) return new Map();
+
+  // Hent bare grunnrentepliktige rader for datoen (minimer data)
+  const rows = execAll(`
+    SELECT permit_key, row_json
+    FROM permit_snapshot
+    WHERE date(snapshot_date) = date(?)
+      AND grunnrente_pliktig = 1;
+  `, [d]);
+
+  // Map orgnr -> { orgnr, name, count, permits[] }
+  const m = new Map();
+
+  for (const r of rows) {
+    const orgnr = extractOwnerOrgnrFromRowJson(r.row_json);
+    if (!orgnr) continue;
+
+    const name = extractOwnerNameFromRowJson(r.row_json);
+    const permit = String(r.permit_key ?? "").trim();
+
+    if (!m.has(orgnr)) {
+      m.set(orgnr, { orgnr, name: name || "", count: 0, permits: [] });
+    }
+    const obj = m.get(orgnr);
+    obj.count += 1;
+    if (permit) obj.permits.push(permit);
+
+    // behold første ikke-tomme navn vi finner
+    if (!obj.name && name) obj.name = name;
+  }
+
+  return m;
+}
+
+function computeGrunnrenteChanges() {
+  const { d1, d2 } = getLatestAndPreviousSnapshotDates();
+  if (!d2) return { d1, d2, started: [], stopped: [] };
+
+  const before = d1 ? buildGrunnrenteOwnerCountsForDate(d1) : new Map();
+  const after  = buildGrunnrenteOwnerCountsForDate(d2);
+
+  const all = new Set([...before.keys(), ...after.keys()]);
+
+  const started = [];
+  const stopped = [];
+
+  for (const orgnr of all) {
+    const a = before.get(orgnr);
+    const b = after.get(orgnr);
+
+    const beforeCnt = a ? a.count : 0;
+    const afterCnt  = b ? b.count : 0;
+
+    if (beforeCnt === 0 && afterCnt > 0) {
+      started.push({
+        orgnr,
+        name: b?.name || a?.name || "",
+        beforeCnt,
+        afterCnt,
+        permits: b?.permits || [],
+      });
+    } else if (beforeCnt > 0 && afterCnt === 0) {
+      stopped.push({
+        orgnr,
+        name: a?.name || b?.name || "",
+        beforeCnt,
+        afterCnt,
+        permits: a?.permits || [],
+      });
+    }
+  }
+
+  // sort: mest relevante øverst
+  started.sort((x, y) => (y.afterCnt - x.afterCnt) || x.orgnr.localeCompare(y.orgnr));
+  stopped.sort((x, y) => (y.beforeCnt - x.beforeCnt) || x.orgnr.localeCompare(y.orgnr));
+
+  return { d1, d2, started, stopped };
+}
+
+function extractOwnerOrgnrFromRowJson(rowJsonText) {
+  const d = parseJsonSafe(rowJsonText);
+  const s = String(d["OK_ORGNR"] ?? "").trim().replace(/\s+/g, "");
+  return /^[0-9]{9}$/.test(s) ? s : "";
+}
+
+function extractOwnerNameFromRowJson(rowJsonText) {
+  const d = parseJsonSafe(rowJsonText);
+  return String(d["OK_NAVN"] ?? "").trim();
+}
+
+function listSnapshotDatesDesc() {
+  const rows = execAll(`
+    SELECT snapshot_date
+    FROM snapshots
+    WHERE snapshot_date IS NOT NULL AND TRIM(snapshot_date) <> ''
+    ORDER BY date(snapshot_date) DESC;
+  `);
+  return rows.map(r => iso10(r.snapshot_date)).filter(Boolean);
+}
+
+function buildGrunnrenteOwnerCountsForDate(snapshotDateIso10) {
+  const d = iso10(snapshotDateIso10);
+  const m = new Map();
+  if (!d) return m;
+
+  const rows = execAll(`
+    SELECT permit_key, row_json
+    FROM permit_snapshot
+    WHERE date(snapshot_date) = date(?)
+      AND grunnrente_pliktig = 1;
+  `, [d]);
+
+  for (const r of rows) {
+    const orgnr = extractOwnerOrgnrFromRowJson(r.row_json);
+    if (!orgnr) continue;
+
+    const name = extractOwnerNameFromRowJson(r.row_json);
+    const permit = String(r.permit_key ?? "").trim();
+
+    if (!m.has(orgnr)) m.set(orgnr, { orgnr, name: name || "", count: 0, permits: [] });
+    const obj = m.get(orgnr);
+    obj.count += 1;
+    if (permit) obj.permits.push(permit);
+    if (!obj.name && name) obj.name = name;
+  }
+
+  return m;
+}
+
+function computeGrunnrenteChanges(d1, d2) {
+  const before = d1 ? buildGrunnrenteOwnerCountsForDate(d1) : new Map();
+  const after  = buildGrunnrenteOwnerCountsForDate(d2);
+
+  const all = new Set([...before.keys(), ...after.keys()]);
+  const started = [];
+  const stopped = [];
+
+  for (const orgnr of all) {
+    const a = before.get(orgnr);
+    const b = after.get(orgnr);
+    const beforeCnt = a ? a.count : 0;
+    const afterCnt  = b ? b.count : 0;
+
+    if (beforeCnt === 0 && afterCnt > 0) {
+      started.push({ orgnr, name: b?.name || "", beforeCnt, afterCnt });
+    } else if (beforeCnt > 0 && afterCnt === 0) {
+      stopped.push({ orgnr, name: a?.name || "", beforeCnt, afterCnt });
+    }
+  }
+
+  started.sort((x, y) => (y.afterCnt - x.afterCnt) || x.orgnr.localeCompare(y.orgnr));
+  stopped.sort((x, y) => (y.beforeCnt - x.beforeCnt) || x.orgnr.localeCompare(y.orgnr));
+
+  return { started, stopped };
+}
+function renderChanges() {
+  setActiveTab("tab-changes");
+  showView("view-changes");
+
+  const sel = safeEl("changesDate");
+  const meta = safeEl("changesMeta");
+  const startedBody = safeEl("changesStartedTable").querySelector("tbody");
+  const stoppedBody = safeEl("changesStoppedTable").querySelector("tbody");
+  const startedEmpty = safeEl("changesStartedEmpty");
+  const stoppedEmpty = safeEl("changesStoppedEmpty");
+
+  const dates = listSnapshotDatesDesc();
+  if (dates.length === 0) {
+    meta.textContent = "Ingen snapshot-datoer funnet.";
+    sel.innerHTML = "";
+    startedBody.innerHTML = "";
+    stoppedBody.innerHTML = "";
+    return;
+  }
+
+  // Fyll dropdown én gang (hvis tom)
+  if (!sel.options.length) {
+    sel.innerHTML = dates.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join("");
+    sel.value = dates[0]; // nyeste
+  }
+
+  const d2 = iso10(sel.value) || dates[0];
+  const idx = dates.indexOf(d2);
+  const d1 = (idx >= 0 && idx + 1 < dates.length) ? dates[idx + 1] : null;
+
+  meta.textContent = d1
+    ? `Viser endringer fra ${formatNorwegianDate(d1)} → ${formatNorwegianDate(d2)}`
+    : `Viser ${formatNorwegianDate(d2)} (ingen tidligere dato funnet)`;
+
+  const { started, stopped } = computeGrunnrenteChanges(d1, d2);
+
+  // render started
+  startedBody.innerHTML = "";
+  if (started.length === 0) {
+    startedEmpty.textContent = "Ingen nye innehavere startet grunnrenteplikt i denne perioden.";
+  } else {
+    startedEmpty.textContent = "";
+    for (const r of started) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${escapeHtml(r.name || "—")}</td>
+        <td><a class="link" href="#/owner/${encodeURIComponent(r.orgnr)}">${escapeHtml(r.orgnr)}</a></td>
+        <td>${escapeHtml(String(r.afterCnt))}</td>
+      `;
+      startedBody.appendChild(tr);
+    }
+  }
+
+  // render stopped
+  stoppedBody.innerHTML = "";
+  if (stopped.length === 0) {
+    stoppedEmpty.textContent = "Ingen innehavere sluttet å være grunnrentepliktige i denne perioden.";
+  } else {
+    stoppedEmpty.textContent = "";
+    for (const r of stopped) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${escapeHtml(r.name || "—")}</td>
+        <td><a class="link" href="#/owner/${encodeURIComponent(r.orgnr)}">${escapeHtml(r.orgnr)}</a></td>
+        <td>${escapeHtml(String(r.beforeCnt))}</td>
+      `;
+      stoppedBody.appendChild(tr);
+    }
+  }
 }
 
 // -------------------------------
@@ -1860,6 +2143,10 @@ function parseHash() {
   if (parts[0] === "areas" || parts[0] === "produksjonsomrader" || parts[0] === "produksjonsområder") {
     return { view: "areas" };
   }
+  // 👇 NYTT: Endringer i grunnrente
+  if (parts[0] === "changes" || parts[0] === "endringer") {
+  return { view: "changes" };
+}
 
   return { view: "now" };
 }
@@ -1885,6 +2172,7 @@ function renderRoute() {
 
   if (r.view === "history") return renderHistory();
   if (r.view === "areas") return renderAreas();
+  if (r.view === "changes") return renderChanges();
 
   renderNow();
 }
@@ -2015,6 +2303,14 @@ function wireEvents() {
       if (r.view === "owner") renderOwner(r.ident);
     });
   }
+}
+
+const changesDate = $("changesDate");
+if (changesDate) {
+  changesDate.addEventListener("change", () => {
+    const r = parseHash();
+    if (r.view === "changes") renderChanges();
+  });
 }
 
 function showError(err) {

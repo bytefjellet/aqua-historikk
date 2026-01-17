@@ -33,6 +33,7 @@
       <a id="tab-owner" class="tab" href="#/owner" role="tab">Innehaver</a>
       <a id="tab-history" class="tab" href="#/history" role="tab">Historikk</a>
       <a id="tab-areas" class="tab" href="#/areas" role="tab">Produksjonsområder</a>
+      <a id="tab-changes" class="tab" href="#/changes" role="tab">Endringer grunnrente</a>
 
     </div>
   </nav>
@@ -236,6 +237,55 @@
         </table>
       </div>
     </section>
+
+    <section id="view-changes" class="view">
+      <h2>Endringer i grunnrenteplikt</h2>
+
+      <div class="controls">
+        <label class="muted">
+          Snapshotdato:
+          <select id="changesDate" class="input" style="min-width:220px"></select>
+        </label>
+        <div id="changesMeta" class="muted"></div>
+      </div>
+
+      <div class="split" style="grid-template-columns: 1fr 1fr;">
+        <div>
+          <h3>Starter grunnrenteplikt</h3>
+          <div class="table-wrap">
+            <table class="table" id="changesStartedTable">
+              <thead>
+                <tr>
+                  <th>Innehaver</th>
+                  <th>Org.nr.</th>
+                  <th>Antall</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div id="changesStartedEmpty" class="muted" style="margin-top:8px"></div>
+        </div>
+
+        <div>
+          <h3>Slutter grunnrenteplikt</h3>
+          <div class="table-wrap">
+            <table class="table" id="changesStoppedTable">
+              <thead>
+                <tr>
+                  <th>Innehaver</th>
+                  <th>Org.nr.</th>
+                  <th>Antall</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div id="changesStoppedEmpty" class="muted" style="margin-top:8px"></div>
+        </div>
+      </div>
+    </section>
+
 
 
   </main>
