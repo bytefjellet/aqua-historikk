@@ -153,16 +153,19 @@ def send_email(subject: str, body: str) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default="db/aqua.sqlite", help="Path til aqua.sqlite")
-    ap.add_argument("--state-file", default=".state/grundrente_last_checked.txt",
+    ap.add_argument("--state-file", default=".state/grunnrente_last_checked.txt",
                     help="Fil for å unngå duplikat-varsler (lagres med siste d2).")
     ap.add_argument("--send-email", action="store_true", help="Send e-post hvis endringer.")
     ap.add_argument(
         "--test-email",
         action="store_true",
         help="Send en test-e-post uansett (bruker SMTP_* / MAIL_* env)."
-    )
-   
-    args = ap.parse_args()
+        )
+    ap.add_argument(
+        "--write-report",
+        default=".state/grunnrente_report.txt",
+        help="Skriv rapport til denne filen."
+        )
 
     args = ap.parse_args()
 
@@ -173,8 +176,6 @@ def main() -> int:
         )
         print("Test e-post sendt.")
         return 0
-
-  
 
     db_path = Path(args.db)
     if not db_path.exists():

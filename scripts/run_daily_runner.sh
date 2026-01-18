@@ -33,6 +33,22 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 echo "==> $(ts) Runner start"
 cd "$PROJECT_ROOT"
 
+
+# ---- Load mail environment (SMTP / recipients) ----
+ENV_MAIL="$PROJECT_ROOT/.env.mail"
+if [[ -f "$ENV_MAIL" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_MAIL"
+  echo "==> $(ts) Loaded mail env (.env.mail)"
+else
+  echo "!! $(ts) Missing $ENV_MAIL (SMTP vars not set)"
+fi
+
+if [[ -f "$DONE_FILE" ]]; then
+  echo "==> $(ts) Already completed today ($STAMP). Exiting."
+  exit 0
+fi
+
 if [[ -f "$DONE_FILE" ]]; then
   echo "==> $(ts) Already completed today ($STAMP). Exiting."
   exit 0

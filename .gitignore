@@ -53,3 +53,10 @@ web/data/*.backup.sqlite
 # GitHub Pages: behold den publiserte DB-en
 # -------------------------
 !web/data/aqua.sqlite
+
+# -------------------------
+# Runtime state (varsling / kontrollfiler)
+# -------------------------
+.state/
+
+.env.mail

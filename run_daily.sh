@@ -12,4 +12,12 @@ PY="/Users/torsteinulvik/code/Aqua-historikk/.venv/bin/python"
 "$PY" -m src.build_original_owner
 "$PY" -m src.update_production_area_status
 "$PY" -m src.validate_db
+
+# 🔔 Grunnrente-varsling (kun ved endring)
+"$PY" scripts/check_grunnrente_changes.py \
+  --db db/aqua.sqlite \
+  --write-report .state/grunnrente_report.txt \
+  --send-email || echo "WARN: grunnrente-varsling feilet"
+
+
 "$PY" -m src.publish_db
