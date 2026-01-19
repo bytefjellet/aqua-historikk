@@ -336,7 +336,9 @@ function getTransferEventsForPermit(permitKey) {
       current_owner_name  AS to_name,
       current_owner_orgnr AS to_ident
     FROM license_transfers
-    WHERE UPPER(TRIM(permit_key)) = UPPER(TRIM(?))
+    WHERE
+      UPPER(REPLACE(REPLACE(TRIM(permit_key), ' ', ''), '-', '')) =
+      UPPER(REPLACE(REPLACE(TRIM(?),         ' ', ''), '-', ''))
     ORDER BY
       ${dateCol ? `date(${dateCol}) ASC, id ASC` : `id ASC`};
   `, [key]);
@@ -1477,15 +1479,17 @@ function renderOwner(ownerIdentity) {
   // men ikke er innehaver nå
   // -----------------------------
 
-  const formerActiveRows = execAll(`
+    const formerActiveRows = execAll(`
     WITH prev AS (
-      SELECT DISTINCT UPPER(TRIM(permit_key)) AS permit_key
+      SELECT DISTINCT
+        UPPER(REPLACE(REPLACE(TRIM(permit_key), ' ', ''), '-', '')) AS permit_key_norm
       FROM license_transfers
       WHERE TRIM(current_owner_orgnr) = TRIM(?)
 
       UNION
 
-      SELECT DISTINCT UPPER(TRIM(permit_key)) AS permit_key
+      SELECT DISTINCT
+        UPPER(REPLACE(REPLACE(TRIM(permit_key), ' ', ''), '-', '')) AS permit_key_norm
       FROM license_original_owner
       WHERE TRIM(original_owner_orgnr) = TRIM(?)
     )
@@ -1495,10 +1499,11 @@ function renderOwner(ownerIdentity) {
       pc.owner_identity AS current_owner_identity
     FROM prev
     JOIN permit_current pc
-      ON UPPER(TRIM(pc.permit_key)) = prev.permit_key
+      ON UPPER(REPLACE(REPLACE(TRIM(pc.permit_key), ' ', ''), '-', '')) = prev.permit_key_norm
     WHERE REPLACE(TRIM(pc.owner_identity), ' ', '') <> REPLACE(TRIM(?), ' ', '')
     ORDER BY pc.permit_key;
   `, [ownerIdentityNorm, ownerIdentityNorm, ownerIdentityNorm]);
+
 
   const formerBody = safeEl("ownerFormerActiveTable").querySelector("tbody");
   formerBody.innerHTML = "";
