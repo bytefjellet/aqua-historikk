@@ -337,8 +337,8 @@ function getTransferEventsForPermit(permitKey) {
       current_owner_orgnr AS to_ident
     FROM license_transfers
     WHERE
-      UPPER(REPLACE(REPLACE(TRIM(permit_key), ' ', ''), '-', '')) =
-      UPPER(REPLACE(REPLACE(TRIM(?),         ' ', ''), '-', ''))
+      WHERE UPPER(REPLACE(TRIM(permit_key), ' ', '')) =
+      UPPER(REPLACE(TRIM(?),         ' ', ''))
     ORDER BY
       ${dateCol ? `date(${dateCol}) ASC, id ASC` : `id ASC`};
   `, [key]);
@@ -1098,8 +1098,8 @@ function renderPermit(permitKey) {
       tidsbegrenset AS tidsbegrenset
     FROM ownership_history
     WHERE
-      UPPER(REPLACE(REPLACE(TRIM(permit_key), ' ', ''), '-', '')) =
-      UPPER(REPLACE(REPLACE(TRIM(?),         ' ', ''), '-', ''))
+      UPPER(REPLACE(TRIM(permit_key), ' ', '')) =
+      UPPER(REPLACE(TRIM(?),         ' ', ''))
     ORDER BY date(valid_from), id;
   `, [permitKey]);
 
@@ -1482,14 +1482,14 @@ function renderOwner(ownerIdentity) {
     const formerActiveRows = execAll(`
     WITH prev AS (
       SELECT DISTINCT
-        UPPER(REPLACE(REPLACE(TRIM(permit_key), ' ', ''), '-', '')) AS permit_key_norm
+        UPPER(REPLACE(TRIM(permit_key), ' ', '')) AS permit_key_norm
       FROM license_transfers
       WHERE TRIM(current_owner_orgnr) = TRIM(?)
 
       UNION
 
       SELECT DISTINCT
-        UPPER(REPLACE(REPLACE(TRIM(permit_key), ' ', ''), '-', '')) AS permit_key_norm
+        UPPER(REPLACE(TRIM(permit_key), ' ', '')) AS permit_key_norm
       FROM license_original_owner
       WHERE TRIM(original_owner_orgnr) = TRIM(?)
     )
@@ -1499,7 +1499,7 @@ function renderOwner(ownerIdentity) {
       pc.owner_identity AS current_owner_identity
     FROM prev
     JOIN permit_current pc
-      ON UPPER(REPLACE(REPLACE(TRIM(pc.permit_key), ' ', ''), '-', '')) = prev.permit_key_norm
+      ON UPPER(REPLACE(TRIM(pc.permit_key), ' ', '')) = prev.permit_key_norm
     WHERE REPLACE(TRIM(pc.owner_identity), ' ', '') <> REPLACE(TRIM(?), ' ', '')
     ORDER BY pc.permit_key;
   `, [ownerIdentityNorm, ownerIdentityNorm, ownerIdentityNorm]);
