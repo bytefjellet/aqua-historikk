@@ -466,6 +466,77 @@ function getGrunnrenteYearsForOwner(ownerOrgnr, fromYear = 2023) {
   return years;
 }
 
+function dayBefore(isoDate) {
+  const d = iso10(isoDate);
+  if (!d) return "";
+  const dt = new Date(d + "T00:00:00Z");
+  dt.setUTCDate(dt.getUTCDate() - 1);
+  return dt.toISOString().slice(0, 10);
+}
+
+// Returnerer intervaller [{ ident, name, from, to, fromIso }]
+function buildOwnershipIntervalsForPermit(permitKey) {
+  const key = String(permitKey ?? "").trim().toUpperCase();
+  if (!key) return [];
+
+  const original = getOriginalOwnerForPermit(key);
+  const transfers = getTransferEventsForPermit(key); // ASC
+
+  const events = [];
+
+  if (original && (original.ident || original.name)) {
+    events.push({
+      date: "0000-01-01", // “opprinnelig”
+      ident: String(original.ident ?? "").trim(),
+      name: String(original.name ?? "").trim(),
+      isOriginal: true
+    });
+  }
+
+  for (const t of transfers) {
+    events.push({
+      date: iso10(t.event_date) || "",
+      ident: String(t.to_ident ?? "").trim(),
+      name: String(t.to_name ?? "").trim(),
+      isOriginal: false
+    });
+  }
+
+  // sorter på dato
+  events.sort((a, b) => {
+    const ad = a.date || "9999-12-31";
+    const bd = b.date || "9999-12-31";
+    if (ad !== bd) return ad.localeCompare(bd);
+    return (a.isOriginal ? -1 : 1);
+  });
+
+  const intervals = [];
+  for (let i = 0; i < events.length; i++) {
+    const cur = events[i];
+    if (!cur.ident && !cur.name) continue;
+
+    const next = events[i + 1] || null;
+
+    const from = cur.isOriginal ? "Opprinnelig" : (cur.date || "—");
+    let to = "Aktiv";
+
+    if (next && next.date) {
+      const end = dayBefore(next.date);
+      to = end || "—";
+    }
+
+    intervals.push({
+      ident: cur.ident,
+      name: cur.name,
+      from,
+      to,
+      fromIso: cur.isOriginal ? null : cur.date
+    });
+  }
+
+  return intervals;
+}
+
 // -------------------------------
 // Owner/permit empty state helpers
 // -------------------------------
@@ -552,6 +623,16 @@ function clearOwnerView() {
 
   const histBody = safeEl("ownerHistoryTable").querySelector("tbody");
   histBody.innerHTML = "";
+
+    const formerBody = safeEl("ownerFormerActiveTable").querySelector("tbody");
+  formerBody.innerHTML = "";
+
+  const formerEmpty = $("ownerFormerActiveEmpty");
+  if (formerEmpty) {
+    formerEmpty.textContent = "";
+    formerEmpty.classList.add("hidden");
+  }
+
 }
 
 // --- owner row_json FORMÅL helper ---
@@ -1389,6 +1470,98 @@ function renderOwner(ownerIdentity) {
     `;
     activeBody.appendChild(tr);
   }
+
+    // -----------------------------
+  // NY TABELL:
+  // Aktive tillatelser der org.nr. har vært innehaver tidligere,
+  // men ikke er innehaver nå
+  // -----------------------------
+
+  const formerActiveRows = execAll(`
+    WITH prev AS (
+      SELECT DISTINCT UPPER(TRIM(permit_key)) AS permit_key
+      FROM license_transfers
+      WHERE TRIM(current_owner_orgnr) = TRIM(?)
+
+      UNION
+
+      SELECT DISTINCT UPPER(TRIM(permit_key)) AS permit_key
+      FROM license_original_owner
+      WHERE TRIM(original_owner_orgnr) = TRIM(?)
+    )
+    SELECT
+      pc.permit_key AS permit_key,
+      pc.owner_name AS current_owner_name,
+      pc.owner_identity AS current_owner_identity
+    FROM prev
+    JOIN permit_current pc
+      ON UPPER(TRIM(pc.permit_key)) = prev.permit_key
+    WHERE REPLACE(TRIM(pc.owner_identity), ' ', '') <> REPLACE(TRIM(?), ' ', '')
+    ORDER BY pc.permit_key;
+  `, [ownerIdentityNorm, ownerIdentityNorm, ownerIdentityNorm]);
+
+  const formerBody = safeEl("ownerFormerActiveTable").querySelector("tbody");
+  formerBody.innerHTML = "";
+
+  const formerEmpty = $("ownerFormerActiveEmpty");
+  if (formerEmpty) {
+    formerEmpty.textContent = "";
+    formerEmpty.classList.add("hidden");
+  }
+
+  if (!formerActiveRows.length) {
+    if (formerEmpty) {
+      formerEmpty.textContent =
+        "Ingen aktive tillatelser funnet hvor innehaver har vært innehaver tidligere.";
+      formerEmpty.classList.remove("hidden");
+    }
+  } else {
+    for (const r of formerActiveRows) {
+      const permit = String(r.permit_key ?? "").trim();
+      const curName = String(r.current_owner_name ?? "").trim() || "—";
+      const curIdent = String(r.current_owner_identity ?? "").trim().replace(/\s+/g, "");
+
+      // Finn perioder der denne innehaveren (= ownerIdentityNorm) var eier
+      const intervals = buildOwnershipIntervalsForPermit(permit)
+        .filter(x => String(x.ident || "").trim() === ownerIdentityNorm);
+
+      // Velg “siste” periode (basert på fromIso), ellers fallback
+      let best = null;
+      for (const it of intervals) {
+        if (!best) { best = it; continue; }
+
+        const a = it.fromIso || "";
+        const b = best.fromIso || "";
+
+        // Har vi en "ekte dato", prioriter den over "opprinnelig"
+        if (a && (!b || a > b)) best = it;
+      }
+
+      const periodText = best
+        ? `${best.from === "Opprinnelig" ? "Opprinnelig" : displayDate(best.from)} → ${
+            best.to === "Aktiv" ? "Aktiv" : displayDate(best.to)
+          }`
+        : "—";
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>
+          <a class="link" href="#/permit/${encodeURIComponent(normalizePermitKey(permit))}">
+            ${escapeHtml(permit)}
+          </a>
+        </td>
+        <td>${escapeHtml(periodText)}</td>
+        <td>${escapeHtml(curName)}</td>
+        <td>
+          ${curIdent
+            ? `<a class="link" href="#/owner/${encodeURIComponent(curIdent)}">${escapeHtml(curIdent)}</a>`
+            : "—"}
+        </td>
+      `;
+      formerBody.appendChild(tr);
+    }
+  }
+
 
   // Historikk: kun avsluttede perioder
   const hist = execAll(`
