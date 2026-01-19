@@ -555,10 +555,12 @@ tr.is-open .chev { transform: rotate(90deg); }
 }
 
 .year-note-text {
-  margin-top: 4px;
+  margin-top: 2px;
   color: var(--muted);
-  font-size: .82rem;
+  font-size: 0.72rem;
+  opacity: 0.7;
 }
+
 
 .year-note-text > div {
   line-height: 1.25;
@@ -571,4 +573,8 @@ tr.is-open .chev { transform: rotate(90deg); }
   background: #fff7ed;     /* samme som pill--yellow */
   border-color: #fed7aa;
   color: #b45309;          /* samme som pill--yellow tekst */
+}
+.year-note-text .year-chip {
+  transform: scale(0.8);
+  margin-right: 4px;
 }

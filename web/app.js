@@ -929,10 +929,13 @@ function renderOwnerCardUnified({
         }).join("")}
       </div>
       <div class="year-note-text">
-        <div><span class="year-chip year-chip--active">Blå</span> = har i året vært innehaver av minst én tillatelse som i dag er grunnrentepliktig.</div>
-        <div><span class="year-chip year-chip--inactive">Gul</span> = har ikke vært innehaver av slike tillatelser i året.</div>
-        <div>Historikk før 21. desember 2025 er beregnet ut fra overføringer hentet fra Akvakulturregisteret.</div>
-      </div>
+        <span class="year-chip year-chip--active">Blå</span>
+        = grunnrentepliktig i året
+        &nbsp;·&nbsp;
+        <span class="year-chip year-chip--inactive">Gul</span>
+        = ikke grunnrentepliktig
+</div>
+
     </div>
   `;
 
