@@ -916,7 +916,7 @@ function renderOwnerCardUnified({
       ? `<span class="pill pill--blue">Grunnrentepliktig</span>`
       : `<span class="pill pill--yellow">Ikke grunnrentepliktig</span>`;
 
-    const nowYear = new Date().getFullYear();
+  const nowYear = new Date().getFullYear();
   const yearsAll = [];
   for (let y = fromYear; y <= nowYear; y++) yearsAll.push(y);
 
