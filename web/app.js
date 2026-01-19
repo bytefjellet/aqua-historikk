@@ -322,7 +322,7 @@ function getProductionAreaInfo(prodAreaRaw) {
 // Owner / transfers helpers
 // -------------------------------
 function getTransferEventsForPermit(permitKey) {
-  const key = String(permitKey ?? "").trim().toUpperCase();
+  const key = String(permitKey ?? "").trim();
 
   const dateCol =
     hasColumn("license_transfers", "journal_date") ? "journal_date" :
@@ -330,17 +330,20 @@ function getTransferEventsForPermit(permitKey) {
     hasColumn("license_transfers", "fetched_at") ? "fetched_at" :
     null;
 
+  if (!dateCol) return [];
+
   const rows = execAll(`
     SELECT
-      ${dateCol ? `${dateCol} AS event_date` : `NULL AS event_date`},
+      ${dateCol} AS event_date,
       current_owner_name  AS to_name,
       current_owner_orgnr AS to_ident
     FROM license_transfers
     WHERE
-      WHERE UPPER(REPLACE(TRIM(permit_key), ' ', '')) =
-      UPPER(REPLACE(TRIM(?),         ' ', ''))
+      UPPER(REPLACE(TRIM(permit_key), ' ', '')) =
+      UPPER(REPLACE(TRIM(?), ' ', ''))
     ORDER BY
-      ${dateCol ? `date(${dateCol}) ASC, id ASC` : `id ASC`};
+      date(${dateCol}) ASC,
+      id ASC;
   `, [key]);
 
   return rows.map(r => ({
@@ -349,6 +352,7 @@ function getTransferEventsForPermit(permitKey) {
     to_ident: String(r.to_ident ?? "").trim(),
   }));
 }
+
 
 function getOriginalOwnerForPermit(permitKey) {
   const key = String(permitKey ?? "").trim().toUpperCase();
