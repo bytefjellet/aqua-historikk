@@ -21,3 +21,15 @@ PY="/Users/torsteinulvik/code/Aqua-historikk/.venv/bin/python"
 
 
 "$PY" -m src.publish_db
+
+# --- Commit & push til GitHub Pages ---
+cd "/Users/torsteinulvik/code/Aqua-historikk"
+
+git add web/data/aqua.sqlite
+
+if git diff --cached --quiet; then
+  echo "No changes to commit."
+else
+  git commit -m "daily: update aqua.sqlite $(date +%F)"
+  git push
+fi
